@@ -16,6 +16,10 @@ _Avoid_: being under the music root
 A non-directory, non-symlink filesystem entry included in collection-membership evaluation.
 _Avoid_: audio file
 
+**Candidate exclusion**:
+A configured rule that removes a filesystem entry or subtree from collection-membership evaluation; excluded entries report not applicable and do not contribute to directory collection status.
+_Avoid_: ignored audio file
+
 **Collection status**:
 A classification of a candidate file or directory by observed collection membership.
 _Avoid_: tracked status
