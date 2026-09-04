@@ -12,6 +12,14 @@ _Avoid_: tracked file, library record
 The fact that a file path corresponds to a beets item; beets’ library database is authoritative.
 _Avoid_: being under the music root
 
+**Candidate file**:
+A non-directory, non-symlink filesystem entry included in collection-membership evaluation.
+_Avoid_: audio file
+
+**Collection status**:
+A classification of a candidate file or directory by observed collection membership.
+_Avoid_: tracked status
+
 **Directory collection status**:
-An aggregate view of collection membership for the relevant audio descendants of a directory.
+An aggregate view of collection membership for the candidate descendants of a directory.
 _Avoid_: directory membership
