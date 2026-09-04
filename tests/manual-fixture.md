@@ -7,5 +7,7 @@ Run this checklist in a supported Yazi installation after creating a beets fixtu
 - [ ] Re-entering the directory and the refresh binding each issue a new lookup, without polling.
 - [ ] Default beets configuration works; a complete `library`/`directory` pair works; partial configuration displays `!`.
 - [ ] Empty, all-collected, all-uncollected, mixed, and symlink-containing directories have the documented aggregate status.
+- [ ] Case-insensitive extension exclusions and case-sensitive subdirectory exclusions show `—`, do not affect ancestors, and skip `beet` when every candidate is excluded.
+- [ ] A malformed exclusion list displays `!` before directory scanning or a `beet` command runs.
 - [ ] The opt-in selected-entry card has the correct path, library identity, status explanation, counts, and unavailable recovery guidance.
 - [ ] Removing the opt-in previewer rule restores Yazi's ordinary preview.

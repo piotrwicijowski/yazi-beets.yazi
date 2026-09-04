@@ -47,6 +47,29 @@ test("rejects partial and empty library overrides", function()
 	end
 end)
 
+test("validates and normalizes flat exclusion lists", function()
+	local exclusions = assert(Core.validate_exclusions({
+		ignore_extensions = { "jpg", "GZ", "jpg" },
+		ignore_subdirectories = { "Artwork", "Artwork" },
+	}))
+	assert(exclusions.ignore_extensions.jpg)
+	assert(exclusions.ignore_extensions.gz)
+	assert(exclusions.ignore_subdirectories.Artwork)
+
+	for _, case in ipairs({
+		{ options = { ignore_extensions = "jpg" }, expected = "ignore_extensions" },
+		{ options = { ignore_extensions = { [1] = "jpg", [3] = "png" } }, expected = "ignore_extensions" },
+		{ options = { ignore_extensions = { " jpg" } }, expected = "ignore_extensions%[1%]" },
+		{ options = { ignore_extensions = { ".jpg" } }, expected = "ignore_extensions%[1%]" },
+		{ options = { ignore_subdirectories = { "" } }, expected = "ignore_subdirectories%[1%]" },
+		{ options = { ignore_subdirectories = { 3 } }, expected = "ignore_subdirectories%[1%]" },
+	}) do
+		local result, err = Core.validate_exclusions(case.options)
+		assert(result == nil)
+		assert(err:find(case.expected), err)
+	end
+end)
+
 local function directory(path, children)
 	return { path = path, kind = "directory", children = children }
 end
@@ -76,6 +99,40 @@ test("classifies files and recursive directories while excluding symlinks", func
 	assert(evaluation.statuses["/music"].candidates == 2)
 	assert(evaluation.statuses["/music"].collected == 1)
 	assert(evaluation.statuses["/music/album/linked.flac"] == nil)
+end)
+
+test("excludes configured extensions and directory subtrees", function()
+	local tree = directory("/music", {
+		file("/music/cover.JPG"),
+		directory("/music/album", {
+			file("/music/album/song.flac"),
+			directory("/music/album/Artwork", {
+				file("/music/album/Artwork/cover.png"),
+			}),
+		}),
+		directory("/music/empty", {}),
+	})
+	local exclusions = assert(Core.validate_exclusions({
+		ignore_extensions = { "jpg" },
+		ignore_subdirectories = { "Artwork" },
+	}))
+	local evaluation = Core.evaluate(tree, { ["/music/album/song.flac"] = true }, exclusions)
+
+	assert(Core.candidate_count(tree, exclusions) == 1)
+	assert(evaluation.statuses["/music/cover.JPG"].status == "not applicable")
+	assert(evaluation.statuses["/music/cover.JPG"].reason == "excluded by configuration")
+	assert(evaluation.statuses["/music/album/Artwork"].status == "not applicable")
+	assert(evaluation.statuses["/music/album/Artwork/cover.png"].status == "not applicable")
+	assert(evaluation.statuses["/music/empty"].reason == "no candidate descendants")
+	assert(evaluation.statuses["/music"].status == "collected")
+	assert(evaluation.statuses["/music"].candidates == 1)
+	assert(Core.card("/music/cover.JPG", evaluation.statuses["/music/cover.JPG"], "default"):find("excluded from collection%-membership evaluation"))
+
+	local ignored_root = directory("/music/cache", { file("/music/cache/song.flac") })
+	local root_exclusions = assert(Core.validate_exclusions({ ignore_subdirectories = { "cache" } }))
+	local root_evaluation = Core.evaluate(ignored_root, {}, root_exclusions)
+	assert(Core.candidate_count(ignored_root, root_exclusions) == 0)
+	assert(root_evaluation.statuses["/music/cache"].reason == "excluded by configuration")
 end)
 
 test("scans all descendants and turns a scan failure into an error", function()

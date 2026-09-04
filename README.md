@@ -28,6 +28,10 @@ beets:setup({
   -- Leave both fields out to use beets' effective default configuration.
   -- library = "/absolute/path/to/library.db",
   -- directory = "/absolute/path/to/music-root",
+
+  -- Omit either list, or use an empty list, to exclude nothing.
+  -- ignore_extensions = { "jpg", "png" },
+  -- ignore_subdirectories = { "Artwork", "Downloads" },
 })
 
 function Linemode:beets()
@@ -52,6 +56,14 @@ beet -l <library> -d <directory> list -p
 
 With neither field, the plugin runs `beet list -p` and lets beets load its effective default configuration. Each active-directory snapshot intersects that full library path set with its recursively scanned candidates. This avoids beets’ configured-root `path:` query edge case. A partial or empty override is unavailable; it is never treated as uncollected.
 
+### Candidate exclusions
+
+`ignore_extensions` and `ignore_subdirectories` are optional lists that remove entries from collection-membership evaluation. Extension values are bare final extensions, matched case-insensitively: `jpg` excludes both `cover.jpg` and `COVER.JPG`. Subdirectory values match directory basenames case-sensitively at every depth, including the active directory.
+
+Both settings must be dense arrays of nonblank, unpadded strings. A leading `.` is invalid for an extension. Scalars, maps, holes, non-string entries, and padded values are invalid; an invalid list makes the active snapshot unavailable before either scanning or running `beet`.
+
+An excluded file or directory subtree displays `—` (not applicable) and does not contribute to ancestor counts or collection status. A scanned tree with no remaining candidate files becomes ready with not-applicable statuses and skips the `beet` command.
+
 ### Refresh
 
 The plugin begins a fresh lookup whenever Yazi emits an active-directory change. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly (and to start the initial lookup if no directory-change event has occurred yet):
@@ -74,9 +86,9 @@ Each entry or refresh discards the old snapshot. The plugin does not poll and do
 | `○` | uncollected |
 | `!` | unavailable |
 | `…` | pending collection status |
-| `—` | not applicable (a directory with no candidate descendants) |
+| `—` | not applicable (excluded by configuration or no candidate descendants) |
 
-A **candidate file** is any non-directory, non-symlink entry. Directories aggregate every recursive candidate descendant. Pending and unavailable results are never evidence that a path is uncollected.
+A **candidate file** is any non-directory, non-symlink entry not removed by a candidate exclusion. Directories aggregate every recursive candidate descendant. Pending and unavailable results are never evidence that a path is uncollected.
 
 ## Selected-entry card and ordinary previews
 
@@ -108,5 +120,6 @@ For a real fixture beets library, manually verify:
 1. markers progress from `…` to their completed values after opening a directory;
 2. `Ctrl-r` performs one new lookup and a bad override shows `!`, not `○`;
 3. default and paired-override lookups use the expected library;
-4. empty, all-collected, all-uncollected, mixed, and symlink-containing directories aggregate correctly; and
-5. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.
+4. empty, all-collected, all-uncollected, mixed, symlink-containing, and excluded directories aggregate correctly;
+5. extension and subdirectory exclusions show `—`, including an active directory excluded by basename, and a malformed list shows `!`; and
+6. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.

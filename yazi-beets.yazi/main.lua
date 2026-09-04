@@ -60,6 +60,12 @@ end
 function M:reload(directory)
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
+	local exclusions, exclusion_error = Core.validate_exclusions(options)
+	if not exclusions then
+		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. exclusion_error))
+		return
+	end
+
 	local command, configuration_error = Core.lookup_command(options)
 	if not command then
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. configuration_error))
@@ -69,6 +75,17 @@ function M:reload(directory)
 	local tree, scan_error = Core.scan(directory, read_directory)
 	if not tree then
 		finish_snapshot(generation, failure_snapshot(directory, "directory scan failed: " .. scan_error))
+		return
+	end
+
+	if Core.candidate_count(tree, exclusions) == 0 then
+		local evaluation = Core.evaluate(tree, {}, exclusions)
+		finish_snapshot(generation, {
+			directory = directory,
+			phase = "ready",
+			statuses = evaluation.statuses,
+			library = library_identity(),
+		})
 		return
 	end
 
@@ -88,7 +105,7 @@ function M:reload(directory)
 		return
 	end
 
-	local evaluation = Core.evaluate(tree, Core.collected_paths(output.stdout))
+	local evaluation = Core.evaluate(tree, Core.collected_paths(output.stdout), exclusions)
 	finish_snapshot(generation, {
 		directory = directory,
 		phase = "ready",
@@ -112,19 +129,19 @@ function M:setup(user_options)
 end
 
 function M:linemode(file)
-	if file.cha and file.cha.is_symlink then
+	local status = Core.status_for(snapshot_for(), tostring(file.url))
+	if file.cha and file.cha.is_symlink and (not status or status.status ~= "not applicable") then
 		return ""
 	end
-	local status = Core.status_for(snapshot_for(), tostring(file.url))
 	return Core.marker(status and status.status)
 end
 
 function M:card(file)
-	if file.cha and file.cha.is_symlink then
-		return "Collection status: Not applicable\nSymlinks are excluded from collection-membership evaluation."
-	end
 	local snapshot = snapshot_for()
 	local result = Core.status_for(snapshot, tostring(file.url))
+	if file.cha and file.cha.is_symlink and (not result or result.status ~= "not applicable") then
+		return "Collection status: Not applicable\nSymlinks are excluded from collection-membership evaluation."
+	end
 	return Core.card(tostring(file.url), result, (snapshot and snapshot.library) or library_identity())
 end
 

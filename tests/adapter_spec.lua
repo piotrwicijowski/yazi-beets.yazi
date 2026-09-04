@@ -4,6 +4,7 @@ package.path = root .. "/yazi-beets.yazi/?.lua;" .. package.path
 local plugin_state = {}
 local commands = {}
 local renders = 0
+local directory_reads = 0
 local subscriptions = {}
 local outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
@@ -37,6 +38,7 @@ _G.ps = { sub = function(event, callback) subscriptions[event] = callback end }
 _G.Url = function(path) return path end
 _G.fs = {
 	read_dir = function(path)
+		directory_reads = directory_reads + 1
 		return listing[tostring(path)]
 	end,
 }
@@ -100,9 +102,32 @@ Plugin:entry()
 assert(#commands == 3, "the async functional entry point refreshes without ya.async")
 
 Plugin:setup({ library = "/data/library.db" })
+local reads_before_invalid_override = directory_reads
 Plugin:entry()
 assert(#commands == 3, "invalid configuration never invokes beet")
+assert(directory_reads == reads_before_invalid_override, "invalid configuration never scans directories")
 assert(Plugin:linemode(file("/music/loose.mp3")) == "!")
 assert(Plugin:card(file("/music/loose.mp3")):find("Correct configuration"))
+
+Plugin:setup({
+	ignore_extensions = { "mp3" },
+	ignore_subdirectories = { "album" },
+})
+local reads_before_excluded_tree = directory_reads
+Plugin:entry()
+assert(#commands == 3, "a zero-candidate tree must not invoke beet")
+assert(directory_reads == reads_before_excluded_tree + 2, "valid exclusions still scan the tree")
+assert(Plugin:linemode(file("/music/loose.mp3")) == "—")
+assert(Plugin:linemode(file("/music/album")) == "—")
+assert(Plugin:linemode(file("/music/album/link.flac", { is_symlink = true })) == "—")
+assert(Plugin:card(file("/music/loose.mp3")):find("excluded from collection%-membership evaluation"))
+
+Plugin:setup({ ignore_extensions = { ".mp3" } })
+local reads_before_invalid_exclusions = directory_reads
+Plugin:entry()
+assert(#commands == 3, "invalid exclusion configuration must not invoke beet")
+assert(directory_reads == reads_before_invalid_exclusions, "invalid exclusions never scan directories")
+assert(Plugin:linemode(file("/music/loose.mp3")) == "!")
+assert(Plugin:card(file("/music/loose.mp3")):find("ignore_extensions%[1%]"))
 
 print("adapter tests passed")
