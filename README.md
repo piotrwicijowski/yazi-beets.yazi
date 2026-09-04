@@ -54,7 +54,7 @@ With neither field, the plugin runs `beet list -p path:<active-directory>` and l
 
 ### Refresh
 
-The plugin begins a fresh lookup when Yazi starts and whenever the active directory changes. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly:
+The plugin begins a fresh lookup whenever Yazi emits an active-directory change. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly (and to start the initial lookup if no directory-change event has occurred yet):
 
 ```toml
 [[manager.prepend_keymap]]

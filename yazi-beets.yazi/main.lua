@@ -109,7 +109,6 @@ function M:setup(user_options)
 	ps.sub("cd", function()
 		M:entry()
 	end)
-	M:entry()
 end
 
 function M:linemode(file)

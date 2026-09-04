@@ -31,7 +31,7 @@ _G.ya = {
 	end,
 }
 _G.ui = { render = function() renders = renders + 1 end }
-_G.cx = { active = { current = { cwd = "/music" } } }
+_G.cx = nil
 _G.ps = { sub = function(event, callback) subscriptions[event] = callback end }
 _G.Url = function(path) return path end
 _G.fs = {
@@ -73,7 +73,11 @@ end
 
 Plugin:setup({})
 assert(type(subscriptions.cd) == "function", "setup must subscribe to directory changes")
-assert(#commands == 1, "setup starts one lookup for the active directory")
+assert(#commands == 0, "setup must not read a directory before Yazi creates cx")
+
+_G.cx = { active = { current = { cwd = "/music" } } }
+subscriptions.cd()
+assert(#commands == 1, "entering a directory starts one lookup")
 assert(commands[1].program == "beet")
 assert(table.concat(commands[1].args, " ") == "list -p path:/music")
 assert(Plugin:linemode(file("/music/album/song.flac")) == "●")
