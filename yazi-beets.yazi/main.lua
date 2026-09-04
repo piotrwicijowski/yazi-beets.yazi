@@ -1,5 +1,5 @@
 --- @since 25.2.13
-local Core = require("core")
+local Core = require(".core")
 
 local M = {}
 local options = {}

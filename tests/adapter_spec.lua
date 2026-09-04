@@ -54,7 +54,18 @@ _G.Command = function(program)
 	return command
 end
 
+local lua_require = require
+local requested_modules = {}
+require = function(name)
+	requested_modules[#requested_modules + 1] = name
+	if name == ".core" then
+		return lua_require("core")
+	end
+	return lua_require(name)
+end
+
 local Plugin = require("main")
+assert(requested_modules[2] == ".core", "the core module must be required relative to the plugin")
 
 local function file(path, properties)
 	return { url = path, cha = properties or {} }
