@@ -20,6 +20,9 @@ _Avoid_: audio file
 A classification of a candidate file or directory by observed collection membership.
 _Avoid_: tracked status
 
+**Pending collection status**:
+A collection status whose evaluation has not completed; it is distinct from unavailable and is not evidence of non-membership.
+
 **Directory collection status**:
 An aggregate view of collection membership for the candidate descendants of a directory.
 _Avoid_: directory membership
