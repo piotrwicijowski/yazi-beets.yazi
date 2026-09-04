@@ -98,16 +98,16 @@ function M:reload(directory)
 end
 
 function M:entry()
-	local directory = current_directory()
-	ya.async(function()
-		M:reload(directory)
-	end)
+	M:reload(current_directory())
 end
 
 function M:setup(user_options)
 	options = user_options or {}
 	ps.sub("cd", function()
-		M:entry()
+		local directory = current_directory()
+		ya.async(function()
+			M:reload(directory)
+		end)
 	end)
 end
 

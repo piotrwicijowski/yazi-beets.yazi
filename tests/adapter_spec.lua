@@ -8,6 +8,7 @@ local subscriptions = {}
 local outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 	{ status = { success = false, code = 1 }, stdout = "", stderr = "database unavailable" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 }
 local listing = {
 	["/music"] = {
@@ -92,9 +93,15 @@ subscriptions.cd()
 assert(#commands == 2, "re-entering a directory starts one fresh lookup")
 assert(Plugin:linemode(file("/music/loose.mp3")) == "!", "a failed lookup is unavailable, not uncollected")
 
+_G.ya.async = function()
+	error("ya.async() can only be used in sync context")
+end
+Plugin:entry()
+assert(#commands == 3, "the async functional entry point refreshes without ya.async")
+
 Plugin:setup({ library = "/data/library.db" })
 Plugin:entry()
-assert(#commands == 2, "invalid configuration never invokes beet")
+assert(#commands == 3, "invalid configuration never invokes beet")
 assert(Plugin:linemode(file("/music/loose.mp3")) == "!")
 assert(Plugin:card(file("/music/loose.mp3")):find("Correct configuration"))
 
