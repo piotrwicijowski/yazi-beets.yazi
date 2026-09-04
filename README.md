@@ -1,0 +1,112 @@
+# yazi-beets
+
+A read-only [Yazi](https://yazi-rs.github.io/) plugin that shows whether a path has **collection membership** in a local [beets](https://beets.io/) library. A beets item is authoritative: neither a filename extension nor being beneath the music root proves membership.
+
+## Support
+
+- Yazi **25.2.13 or later** (the plugin declares this minimum at load time).
+- beets **2.x**, using the documented `beet list -p path:…` CLI.
+- The automated suite is exercised with Lua 5.5; the verification environment provides Yazi 26.8.15 and beets 2.13.1.
+
+The plugin never imports, moves, retags, deletes, or otherwise modifies beets items. Symlinks are not followed or evaluated.
+
+## Install
+
+Copy or symlink `yazi-beets.yazi/` into Yazi's plugin directory:
+
+```sh
+mkdir -p ~/.config/yazi/plugins
+cp -R yazi-beets.yazi ~/.config/yazi/plugins/
+```
+
+Add this to `~/.config/yazi/init.lua`:
+
+```lua
+local beets = require("yazi-beets")
+
+beets:setup({
+  -- Leave both fields out to use beets' effective default configuration.
+  -- library = "/absolute/path/to/library.db",
+  -- directory = "/absolute/path/to/music-root",
+})
+
+function Linemode:beets()
+  return beets:linemode(self._file)
+end
+```
+
+A custom linemode must also be selected in `~/.config/yazi/yazi.toml`:
+
+```toml
+[mgr]
+linemode = "beets"
+```
+
+### Explicit library override
+
+Set **both** `library` and `directory` to non-empty absolute paths. Every lookup then runs:
+
+```text
+beet -l <library> -d <directory> list -p path:<active-directory>
+```
+
+With neither field, the plugin runs `beet list -p path:<active-directory>` and lets beets load its effective default configuration. A partial or empty override is unavailable; it is never treated as uncollected.
+
+### Refresh
+
+The plugin begins a fresh lookup when Yazi starts and whenever the active directory changes. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly:
+
+```toml
+[[manager.prepend_keymap]]
+on = "<C-r>"
+run = "plugin yazi-beets"
+desc = "Refresh beets collection status"
+```
+
+Each entry or refresh discards the old snapshot. The plugin does not poll and does not keep a session-wide cache.
+
+## Markers
+
+| Marker | Collection status |
+| --- | --- |
+| `●` | collected |
+| `◐` | mixed directory |
+| `○` | uncollected |
+| `!` | unavailable |
+| `…` | pending collection status |
+| `—` | not applicable (a directory with no candidate descendants) |
+
+A **candidate file** is any non-directory, non-symlink entry. Directories aggregate every recursive candidate descendant. Pending and unavailable results are never evidence that a path is uncollected.
+
+## Selected-entry card and ordinary previews
+
+The plugin includes a `peek()` previewer that renders an accessible status card with the status name, explanation, path, library identity, directory counts, and recovery guidance.
+
+Yazi previewers replace the previewer rule they match; it has no generic preview-overlay or previewer-chaining API. To avoid silently taking away ordinary previews, the installation above **does not install the card as a catch-all previewer**. Ordinary Yazi previews remain visible by default.
+
+To intentionally use the status card instead of normal previews, opt in with this `yazi.toml` rule:
+
+```toml
+[plugin]
+prepend_previewers = [
+  { url = "*", run = "yazi-beets" },
+]
+```
+
+Remove that rule to safely fall back to Yazi's ordinary previewer. This explicit choice is necessary because a generic custom previewer cannot compose with every built-in image, video, archive, and code previewer.
+
+## Verification
+
+Run deterministic fixtures and syntax checks:
+
+```sh
+make check
+```
+
+For a real fixture beets library, manually verify:
+
+1. markers progress from `…` to their completed values after opening a directory;
+2. `Ctrl-r` performs one new lookup and a bad override shows `!`, not `○`;
+3. default and paired-override lookups use the expected library;
+4. empty, all-collected, all-uncollected, mixed, and symlink-containing directories aggregate correctly; and
+5. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.
