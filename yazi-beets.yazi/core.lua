@@ -1,17 +1,14 @@
 local Core = {}
 
-function Core.lookup_command(options, directory)
+function Core.lookup_command(options)
 	options = options or {}
-	if type(directory) ~= "string" or directory == "" then
-		return nil, "The active directory is unavailable."
-	end
 
 	local library = options.library
 	local music_directory = options.directory
 	if library == nil and music_directory == nil then
 		return {
 			program = "beet",
-			args = { "list", "-p", "path:" .. directory },
+			args = { "list", "-p" },
 		}, nil
 	end
 
@@ -21,7 +18,7 @@ function Core.lookup_command(options, directory)
 
 	return {
 		program = "beet",
-		args = { "-l", library, "-d", music_directory, "list", "-p", "path:" .. directory },
+		args = { "-l", library, "-d", music_directory, "list", "-p" },
 	}, nil
 end
 

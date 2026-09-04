@@ -60,7 +60,7 @@ end
 function M:reload(directory)
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
-	local command, configuration_error = Core.lookup_command(options, directory)
+	local command, configuration_error = Core.lookup_command(options)
 	if not command then
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. configuration_error))
 		return

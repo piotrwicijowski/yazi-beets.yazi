@@ -5,7 +5,7 @@ A read-only [Yazi](https://yazi-rs.github.io/) plugin that shows whether a path 
 ## Support
 
 - Yazi **25.2.13 or later** (the plugin declares this minimum at load time).
-- beets **2.x**, using the documented `beet list -p path:…` CLI.
+- beets **2.x**, using the documented `beet list -p` CLI.
 - The automated suite is exercised with Lua 5.5; the verification environment provides Yazi 26.8.15 and beets 2.13.1.
 
 The plugin never imports, moves, retags, deletes, or otherwise modifies beets items. Symlinks are not followed or evaluated.
@@ -47,10 +47,10 @@ linemode = "beets"
 Set **both** `library` and `directory` to non-empty absolute paths. Every lookup then runs:
 
 ```text
-beet -l <library> -d <directory> list -p path:<active-directory>
+beet -l <library> -d <directory> list -p
 ```
 
-With neither field, the plugin runs `beet list -p path:<active-directory>` and lets beets load its effective default configuration. A partial or empty override is unavailable; it is never treated as uncollected.
+With neither field, the plugin runs `beet list -p` and lets beets load its effective default configuration. Each active-directory snapshot intersects that full library path set with its recursively scanned candidates. This avoids beets’ configured-root `path:` query edge case. A partial or empty override is unavailable; it is never treated as uncollected.
 
 ### Refresh
 

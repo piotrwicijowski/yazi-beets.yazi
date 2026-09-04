@@ -79,7 +79,7 @@ _G.cx = { active = { current = { cwd = "/music" } } }
 subscriptions.cd()
 assert(#commands == 1, "entering a directory starts one lookup")
 assert(commands[1].program == "beet")
-assert(table.concat(commands[1].args, " ") == "list -p path:/music")
+assert(table.concat(commands[1].args, " ") == "list -p")
 assert(Plugin:linemode(file("/music/album/song.flac")) == "●")
 assert(Plugin:linemode(file("/music/loose.mp3")) == "○")
 assert(Plugin:linemode(file("/music/album")) == "●")

@@ -21,16 +21,16 @@ local function same(actual, expected)
 	end
 end
 
-test("builds the default beets lookup without library flags", function()
-	local command = assert(Core.lookup_command({}, "/music/album"))
+test("builds one full-library lookup without library flags", function()
+	local command = assert(Core.lookup_command({}))
 	assert(command.program == "beet")
-	same(command.args, { "list", "-p", "path:/music/album" })
+	same(command.args, { "list", "-p" })
 end)
 
-test("passes a complete library override as a paired argument vector", function()
-	local command = assert(Core.lookup_command({ library = "/data/library.db", directory = "/music" }, "/music/album"))
+test("passes a complete library override to the full-library lookup", function()
+	local command = assert(Core.lookup_command({ library = "/data/library.db", directory = "/music" }))
 	same(command.args, {
-		"-l", "/data/library.db", "-d", "/music", "list", "-p", "path:/music/album",
+		"-l", "/data/library.db", "-d", "/music", "list", "-p",
 	})
 end)
 
@@ -41,7 +41,7 @@ test("rejects partial and empty library overrides", function()
 		{ library = "", directory = "/music" },
 		{ library = "/data/library.db", directory = "" },
 	}) do
-		local command, err = Core.lookup_command(options, "/music/album")
+		local command, err = Core.lookup_command(options)
 		assert(command == nil)
 		assert(err:find("both non%-empty library and directory"))
 	end
