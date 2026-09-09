@@ -4,6 +4,7 @@ package.path = root .. "/yazi-beets.yazi/?.lua;" .. package.path
 local plugin_state = {}
 local commands = {}
 local renders = 0
+local render_history = {}
 local directory_reads = 0
 local subscriptions = {}
 local outputs = {
@@ -35,7 +36,18 @@ _G.ya = {
 		return callback()
 	end,
 }
-_G.ui = { render = function() renders = renders + 1 end }
+_G.ui = {
+	render = function()
+		renders = renders + 1
+		local snapshot = plugin_state.snapshot or {}
+		local statuses = snapshot.statuses or {}
+		render_history[#render_history + 1] = {
+			phase = snapshot.phase,
+			album = statuses["/music/album"] and statuses["/music/album"].status,
+			loose = statuses["/music/loose.mp3"] and statuses["/music/loose.mp3"].status,
+		}
+	end,
+}
 _G.cx = nil
 _G.ps = { sub = function(event, callback) subscriptions[event] = callback end }
 _G.Url = function(path) return path end
@@ -100,6 +112,13 @@ assert(Plugin:linemode(file("/music")) == "◐")
 assert(Plugin:linemode(file("/music/album/link.flac", { is_symlink = true })) == "")
 assert(Plugin:card(file("/music/album")):find("Candidates: 1 %(1 collected%)"))
 assert(renders >= 2, "pending and ready snapshots redraw the UI")
+local saw_partial_update = false
+for _, snapshot in ipairs(render_history) do
+	if snapshot.phase == "streaming" and snapshot.loose == "uncollected" and snapshot.album == nil then
+		saw_partial_update = true
+	end
+end
+assert(saw_partial_update, "direct files publish before current-directory subtrees finish")
 
 subscriptions.cd()
 assert(#commands == 2, "re-entering a directory starts one fresh lookup")

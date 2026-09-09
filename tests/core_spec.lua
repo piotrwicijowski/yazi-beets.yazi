@@ -189,6 +189,15 @@ test("maps every collection status to its agreed marker", function()
 	assert(card:find("Library: default beets configuration"))
 end)
 
+test("keeps unresolved streaming paths pending while preserving published statuses", function()
+	local snapshot = {
+		phase = "streaming",
+		statuses = { ["/music/ready.flac"] = { status = "collected" } },
+	}
+	assert(Core.status_for(snapshot, "/music/ready.flac").status == "collected")
+	assert(Core.status_for(snapshot, "/music/waiting.flac").status == "pending collection status")
+end)
+
 test("maps pending and unavailable results to truthful markers and cards", function()
 
 	local pending = Core.status_for({ phase = "pending" }, "/music/song.flac")

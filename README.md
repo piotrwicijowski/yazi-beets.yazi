@@ -88,6 +88,10 @@ desc = "Refresh beets collection status"
 
 Each entry or refresh discards the old snapshot. The default behavior does not poll or keep a session-wide cache; the optional lookup cache above changes only the lookup behavior on directory entry.
 
+### Progressive updates
+
+An active directory initially displays pending collection statuses. After the beets lookup is available (immediately on an optional cache hit), direct candidate files in the active directory are published first. The plugin then scans and publishes each direct subdirectory's complete subtree in turn. Unfinished paths remain pending, including the active directory itself, until every subtree is complete. This keeps large collection roots responsive without treating incomplete work as uncollected.
+
 ## Markers
 
 | Marker | Collection status |

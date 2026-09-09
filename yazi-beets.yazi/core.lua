@@ -173,7 +173,14 @@ function Core.status_for(snapshot, path)
 	if snapshot.outside_music_directory_root then
 		return { status = "not applicable", reason = "outside configured music directory root" }
 	end
-	return snapshot.statuses and snapshot.statuses[path]
+	local result = snapshot.statuses and snapshot.statuses[path]
+	if result then
+		return result
+	end
+	if snapshot.phase == "streaming" then
+		return { status = "pending collection status" }
+	end
+	return nil
 end
 
 function Core.card(path, result, library)
@@ -266,6 +273,23 @@ function Core.candidate_count(tree, exclusions)
 	return count(tree, false)
 end
 
+function Core.directory_result(candidates, collected)
+	local status = "mixed"
+	if candidates == 0 then
+		status = "not applicable"
+	elseif collected == candidates then
+		status = "collected"
+	elseif collected == 0 then
+		status = "uncollected"
+	end
+	return {
+		status = status,
+		candidates = candidates,
+		collected = collected,
+		reason = status == "not applicable" and "no candidate descendants" or nil,
+	}
+end
+
 function Core.evaluate(tree, collected_paths, exclusions)
 	local statuses = {}
 	collected_paths = collected_paths or {}
@@ -316,20 +340,7 @@ function Core.evaluate(tree, collected_paths, exclusions)
 			end
 		end
 
-		local status = "mixed"
-		if candidates == 0 then
-			status = "not applicable"
-		elseif collected == candidates then
-			status = "collected"
-		elseif collected == 0 then
-			status = "uncollected"
-		end
-		local result = {
-			status = status,
-			candidates = candidates,
-			collected = collected,
-			reason = status == "not applicable" and "no candidate descendants" or nil,
-		}
+		local result = Core.directory_result(candidates, collected)
 		statuses[node.path] = result
 		return result
 	end

@@ -30,6 +30,17 @@ local snapshot_for = ya.sync(function(state)
 	return state.snapshot
 end)
 
+local publish_statuses = ya.sync(function(state, generation, statuses)
+	if state.generation ~= generation or not state.snapshot or state.snapshot.phase ~= "streaming" then
+		return false
+	end
+	for path, result in pairs(statuses) do
+		state.snapshot.statuses[path] = result
+	end
+	ui.render()
+	return true
+end)
+
 local function library_identity()
 	if options.library and options.directory then
 		return string.format("%s (root: %s)", options.library, options.directory)
@@ -123,61 +134,114 @@ function M:reload(directory, force_refresh)
 		return
 	end
 
-	local tree, scan_error = Core.scan(directory, read_directory)
-	if not tree then
-		finish_snapshot(generation, failure_snapshot(directory, "directory scan failed: " .. scan_error))
-		return
-	end
-
-	if Core.candidate_count(tree, exclusions) == 0 then
-		local evaluation = Core.evaluate(tree, {}, exclusions)
+	local root = { path = directory, kind = "directory", children = {} }
+	local root_result = Core.evaluate(root, {}, exclusions).statuses[directory]
+	if root_result.reason == "excluded by configuration" then
 		finish_snapshot(generation, {
 			directory = directory,
 			phase = "ready",
-			statuses = evaluation.statuses,
+			statuses = { [directory] = root_result },
 			library = library_identity(),
 		})
 		return
 	end
 
-	local paths = cache_enabled and cached_paths(force_refresh) or nil
-	if paths then
-		local evaluation = Core.evaluate(tree, paths, exclusions)
-		finish_snapshot(generation, {
-			directory = directory,
-			phase = "ready",
-			statuses = evaluation.statuses,
-			library = library_identity(),
-		})
+	local entries, read_error = read_directory(directory)
+	if not entries then
+		finish_snapshot(generation, failure_snapshot(directory, "directory scan failed: " .. tostring(read_error)))
 		return
 	end
 
-	local fingerprint = cache_enabled and cache_fingerprint() or nil
-	local output, command_error = Command(command.program):arg(command.args):output()
-	if not output then
-		finish_snapshot(generation, failure_snapshot(directory, "could not start beet: " .. tostring(command_error)))
-		return
-	end
-	if not output.status.success then
-		finish_snapshot(generation, failure_snapshot(directory, string.format(
-			"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
-		)))
-		return
-	end
-	if type(output.stdout) ~= "string" then
-		finish_snapshot(generation, failure_snapshot(directory, "beet output could not be read"))
+	local statuses = {}
+	if not finish_snapshot(generation, {
+		directory = directory,
+		phase = "streaming",
+		statuses = statuses,
+		library = library_identity(),
+	}) then
 		return
 	end
 
-	paths = Core.collected_paths(output.stdout)
-	if fingerprint and fingerprint == cache_fingerprint() then
-		lookup_cache = { fingerprint = fingerprint, paths = paths }
+	local paths
+	local function resolve_paths()
+		if paths then
+			return paths
+		end
+		paths = cache_enabled and cached_paths(force_refresh) or nil
+		if paths then
+			return paths
+		end
+
+		local fingerprint = cache_enabled and cache_fingerprint() or nil
+		local output, command_error = Command(command.program):arg(command.args):output()
+		if not output then
+			finish_snapshot(generation, failure_snapshot(directory, "could not start beet: " .. tostring(command_error)))
+			return nil
+		end
+		if not output.status.success then
+			finish_snapshot(generation, failure_snapshot(directory, string.format(
+				"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
+			)))
+			return nil
+		end
+		if type(output.stdout) ~= "string" then
+			finish_snapshot(generation, failure_snapshot(directory, "beet output could not be read"))
+			return nil
+		end
+
+		paths = Core.collected_paths(output.stdout)
+		if fingerprint and fingerprint == cache_fingerprint() then
+			lookup_cache = { fingerprint = fingerprint, paths = paths }
+		end
+		return paths
 	end
-	local evaluation = Core.evaluate(tree, paths, exclusions)
+
+	local candidates, collected = 0, 0
+	local work = {}
+	for _, entry in ipairs(entries) do
+		if entry.kind ~= "directory" then
+			work[#work + 1] = entry
+		end
+	end
+	for _, entry in ipairs(entries) do
+		if entry.kind == "directory" then
+			work[#work + 1] = entry
+		end
+	end
+	for _, entry in ipairs(work) do
+		local tree = entry
+		if entry.kind == "directory" then
+			local scan_error
+			tree, scan_error = Core.scan(entry.path, read_directory)
+			if not tree then
+				finish_snapshot(generation, failure_snapshot(directory, "directory scan failed: " .. scan_error))
+				return
+			end
+		end
+
+		local candidate_count = Core.candidate_count(tree, exclusions)
+		if candidate_count > 0 and not resolve_paths() then
+			return
+		end
+		local evaluation = Core.evaluate(tree, paths or {}, exclusions)
+		for path, result in pairs(evaluation.statuses) do
+			statuses[path] = result
+		end
+		local result = evaluation.statuses[entry.path]
+		if result then
+			candidates = candidates + result.candidates
+			collected = collected + result.collected
+		end
+		if next(evaluation.statuses) and not publish_statuses(generation, evaluation.statuses) then
+			return
+		end
+	end
+
+	statuses[directory] = Core.directory_result(candidates, collected)
 	finish_snapshot(generation, {
 		directory = directory,
 		phase = "ready",
-		statuses = evaluation.statuses,
+		statuses = statuses,
 		library = library_identity(),
 	})
 end
