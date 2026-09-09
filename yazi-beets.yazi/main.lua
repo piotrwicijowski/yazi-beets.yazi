@@ -72,6 +72,16 @@ function M:reload(directory)
 		return
 	end
 
+	if options.directory and not Core.is_within_root(directory, options.directory) then
+		finish_snapshot(generation, {
+			directory = directory,
+			phase = "ready",
+			outside_music_directory_root = true,
+			library = library_identity(),
+		})
+		return
+	end
+
 	local tree, scan_error = Core.scan(directory, read_directory)
 	if not tree then
 		finish_snapshot(generation, failure_snapshot(directory, "directory scan failed: " .. scan_error))

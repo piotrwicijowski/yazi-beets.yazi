@@ -130,4 +130,13 @@ assert(directory_reads == reads_before_invalid_exclusions, "invalid exclusions n
 assert(Plugin:linemode(file("/music/loose.mp3")) == "!")
 assert(Plugin:card(file("/music/loose.mp3")):find("ignore_extensions%[1%]"))
 
+Plugin:setup({ library = "/data/library.db", directory = "/music" })
+_G.cx = { active = { current = { cwd = "/downloads" } } }
+local reads_before_outside_root = directory_reads
+Plugin:entry()
+assert(#commands == 3, "a directory outside the configured root must not invoke beet")
+assert(directory_reads == reads_before_outside_root, "a directory outside the configured root must not be scanned")
+assert(Plugin:linemode(file("/downloads/loose.mp3")) == "—")
+assert(Plugin:card(file("/downloads/loose.mp3")):find("outside the configured music directory root"))
+
 print("adapter tests passed")

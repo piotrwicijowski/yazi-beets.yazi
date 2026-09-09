@@ -47,6 +47,15 @@ test("rejects partial and empty library overrides", function()
 	end
 end)
 
+test("recognizes paths within the configured music directory root", function()
+	assert(Core.is_within_root("/music", "/music"))
+	assert(Core.is_within_root("/music/album", "/music/"))
+	assert(Core.is_within_root("/music/album", "/"))
+	assert(not Core.is_within_root("/music-archive", "/music"))
+	assert(not Core.is_within_root("/downloads", "/music"))
+	assert(not Core.is_within_root("/music/../downloads", "/music"))
+end)
+
 test("validates and normalizes flat exclusion lists", function()
 	local exclusions = assert(Core.validate_exclusions({
 		ignore_extensions = { "jpg", "GZ", "jpg" },
@@ -180,6 +189,10 @@ test("maps pending and unavailable results to truthful markers and cards", funct
 	assert(unavailable.status == "unavailable")
 	assert(unavailable.reason == "beet exited with code 1")
 
+	local outside_root = Core.status_for({ phase = "ready", outside_music_directory_root = true }, "/downloads/song.flac")
+	assert(outside_root.status == "not applicable")
+	assert(outside_root.reason == "outside configured music directory root")
+
 	local card = Core.card("/music", {
 		status = "unavailable",
 		reason = "invalid configuration",
@@ -191,6 +204,7 @@ test("maps pending and unavailable results to truthful markers and cards", funct
 	assert(card:find("Library: default beets configuration"))
 	assert(card:find("Candidates: 3 %(1 collected%)"))
 	assert(card:find("Correct configuration or run the refresh command"))
+	assert(Core.card("/downloads", outside_root, "library"):find("outside the configured music directory root"))
 end)
 
 test("aggregates all-collected and all-uncollected directories", function()

@@ -22,6 +22,35 @@ function Core.lookup_command(options)
 	}, nil
 end
 
+function Core.is_within_root(path, root)
+	if type(path) ~= "string" or type(root) ~= "string" then
+		return false
+	end
+
+	local function normalize(value)
+		local absolute = value:sub(1, 1) == "/"
+		local parts = {}
+		for part in value:gmatch("[^/]+") do
+			if part == ".." then
+				if #parts > 0 then
+					table.remove(parts)
+				end
+			elseif part ~= "." then
+				parts[#parts + 1] = part
+			end
+		end
+		local normalized = table.concat(parts, "/")
+		if absolute then
+			return "/" .. normalized
+		end
+		return normalized
+	end
+
+	path = normalize(path)
+	root = normalize(root)
+	return path == root or root == "/" or path:sub(1, #root + 1) == root .. "/"
+end
+
 function Core.validate_exclusions(options)
 	if type(options) ~= "table" then
 		return nil, "setup options must be a table"
@@ -131,6 +160,9 @@ function Core.status_for(snapshot, path)
 	if snapshot.phase == "unavailable" then
 		return { status = "unavailable", reason = snapshot.reason }
 	end
+	if snapshot.outside_music_directory_root then
+		return { status = "not applicable", reason = "outside configured music directory root" }
+	end
 	return snapshot.statuses and snapshot.statuses[path]
 end
 
@@ -140,6 +172,8 @@ function Core.card(path, result, library)
 	local explanation = EXPLANATIONS[status] or EXPLANATIONS.unavailable
 	if status == "not applicable" and result.reason == "excluded by configuration" then
 		explanation = "This path is excluded from collection-membership evaluation by configuration."
+	elseif status == "not applicable" and result.reason == "outside configured music directory root" then
+		explanation = "This path is outside the configured music directory root, so collection membership was not evaluated."
 	end
 	local lines = {
 		"Collection status: " .. (TITLES[status] or "Unavailable"),
