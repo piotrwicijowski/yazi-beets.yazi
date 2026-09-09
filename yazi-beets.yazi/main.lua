@@ -3,6 +3,7 @@ local Core = require(".core")
 
 local M = {}
 local options = {}
+local lookup_cache
 
 local current_directory = ya.sync(function()
 	return tostring(cx.active.current.cwd)
@@ -57,9 +58,49 @@ local function failure_snapshot(directory, reason)
 	return { directory = directory, phase = "unavailable", reason = reason, library = library_identity() }
 end
 
-function M:reload(directory)
+local function cache_fingerprint()
+	if not options.library then
+		return nil
+	end
+
+	local function fingerprint_part(path, optional)
+		local cha, err = fs.cha(Url(path), false)
+		if cha then
+			return string.format("%s:%s", tostring(cha.mtime), tostring(cha.len))
+		end
+		if optional and err and err.kind == "NotFound" then
+			return "absent"
+		end
+		return nil
+	end
+
+	local database = fingerprint_part(options.library, false)
+	local wal = fingerprint_part(options.library .. "-wal", true)
+	if not database or not wal then
+		return nil
+	end
+	return database .. "/" .. wal
+end
+
+local function cached_paths(force_refresh)
+	if force_refresh or not lookup_cache then
+		return nil
+	end
+	local fingerprint = cache_fingerprint()
+	if fingerprint and lookup_cache.fingerprint == fingerprint then
+		return lookup_cache.paths
+	end
+	return nil
+end
+
+function M:reload(directory, force_refresh)
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
+	local cache_enabled, cache_error = Core.cache_enabled(options)
+	if cache_enabled == nil then
+		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. cache_error))
+		return
+	end
 	local exclusions, exclusion_error = Core.validate_exclusions(options)
 	if not exclusions then
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. exclusion_error))
@@ -99,6 +140,19 @@ function M:reload(directory)
 		return
 	end
 
+	local paths = cache_enabled and cached_paths(force_refresh) or nil
+	if paths then
+		local evaluation = Core.evaluate(tree, paths, exclusions)
+		finish_snapshot(generation, {
+			directory = directory,
+			phase = "ready",
+			statuses = evaluation.statuses,
+			library = library_identity(),
+		})
+		return
+	end
+
+	local fingerprint = cache_enabled and cache_fingerprint() or nil
 	local output, command_error = Command(command.program):arg(command.args):output()
 	if not output then
 		finish_snapshot(generation, failure_snapshot(directory, "could not start beet: " .. tostring(command_error)))
@@ -115,7 +169,11 @@ function M:reload(directory)
 		return
 	end
 
-	local evaluation = Core.evaluate(tree, Core.collected_paths(output.stdout), exclusions)
+	paths = Core.collected_paths(output.stdout)
+	if fingerprint and fingerprint == cache_fingerprint() then
+		lookup_cache = { fingerprint = fingerprint, paths = paths }
+	end
+	local evaluation = Core.evaluate(tree, paths, exclusions)
 	finish_snapshot(generation, {
 		directory = directory,
 		phase = "ready",
@@ -125,11 +183,12 @@ function M:reload(directory)
 end
 
 function M:entry()
-	M:reload(current_directory())
+	M:reload(current_directory(), true)
 end
 
 function M:setup(user_options)
 	options = user_options or {}
+	lookup_cache = nil
 	ps.sub("cd", function()
 		local directory = current_directory()
 		ya.async(function()

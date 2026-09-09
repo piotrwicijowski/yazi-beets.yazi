@@ -51,6 +51,16 @@ function Core.is_within_root(path, root)
 	return path == root or root == "/" or path:sub(1, #root + 1) == root .. "/"
 end
 
+function Core.cache_enabled(options)
+	if type(options) ~= "table" then
+		return nil, "setup options must be a table"
+	end
+	if options.cache ~= nil and type(options.cache) ~= "boolean" then
+		return nil, "cache must be a boolean"
+	end
+	return options.cache == true
+end
+
 function Core.validate_exclusions(options)
 	if type(options) ~= "table" then
 		return nil, "setup options must be a table"

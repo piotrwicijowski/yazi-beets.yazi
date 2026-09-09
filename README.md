@@ -29,6 +29,9 @@ beets:setup({
   -- library = "/absolute/path/to/library.db",
   -- directory = "/absolute/path/to/music-root",
 
+  -- Optional: cache successful lookups for an explicit library override.
+  -- cache = true,
+
   -- Omit either list, or use an empty list, to exclude nothing.
   -- ignore_extensions = { "jpg", "png" },
   -- ignore_subdirectories = { "Artwork", "Downloads" },
@@ -58,6 +61,12 @@ With neither field, the plugin runs `beet list -p` and lets beets load its effec
 
 With an explicit `directory` override, the plugin does not scan or invoke `beet` for an active directory outside that root. Those entries display `—` because collection membership is not evaluated there. This guard is unavailable with the default configuration because the effective beets root is not known to the plugin.
 
+### Optional lookup cache
+
+`cache = true` enables an in-memory cache of successful `beet` lookup output when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing that output. A change starts a fresh lookup. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately.
+
+Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs a new lookup.
+
 ### Candidate exclusions
 
 `ignore_extensions` and `ignore_subdirectories` are optional lists that remove entries from collection-membership evaluation. Extension values are bare final extensions, matched case-insensitively: `jpg` excludes both `cover.jpg` and `COVER.JPG`. Subdirectory values match directory basenames case-sensitively at every depth, including the active directory.
@@ -68,7 +77,7 @@ An excluded file or directory subtree displays `—` (not applicable) and does n
 
 ### Refresh
 
-The plugin begins a fresh lookup whenever Yazi emits an active-directory change. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly (and to start the initial lookup if no directory-change event has occurred yet):
+By default, the plugin begins a fresh lookup whenever Yazi emits an active-directory change. Bind its functional entry point in `~/.config/yazi/keymap.toml` to refresh the active directory explicitly (and to start the initial lookup if no directory-change event has occurred yet):
 
 ```toml
 [[manager.prepend_keymap]]
@@ -77,7 +86,7 @@ run = "plugin yazi-beets"
 desc = "Refresh beets collection status"
 ```
 
-Each entry or refresh discards the old snapshot. The plugin does not poll and does not keep a session-wide cache.
+Each entry or refresh discards the old snapshot. The default behavior does not poll or keep a session-wide cache; the optional lookup cache above changes only the lookup behavior on directory entry.
 
 ## Markers
 
@@ -120,8 +129,9 @@ make check
 For a real fixture beets library, manually verify:
 
 1. markers progress from `…` to their completed values after opening a directory;
-2. `Ctrl-r` performs one new lookup and a bad override shows `!`, not `○`;
-3. default and paired-override lookups use the expected library;
-4. empty, all-collected, all-uncollected, mixed, symlink-containing, and excluded directories aggregate correctly;
-5. extension and subdirectory exclusions show `—`, including an active directory excluded by basename, and a malformed list shows `!`; and
-6. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.
+2. `Ctrl-r` performs one new lookup and a bad override shows `!`, not `○`; and
+3. with `cache = true` and an explicit override, revisiting an unchanged library avoids `beet`, while changing the database or its `-wal` sidecar triggers a new lookup;
+4. default and paired-override lookups use the expected library;
+5. empty, all-collected, all-uncollected, mixed, symlink-containing, and excluded directories aggregate correctly;
+6. extension and subdirectory exclusions show `—`, including an active directory excluded by basename, and a malformed list shows `!`; and
+7. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.

@@ -11,6 +11,9 @@ local outputs = {
 	{ status = { success = false, code = 1 }, stdout = "", stderr = "database unavailable" },
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 }
+local library_metadata = {
+	["/data/library.db"] = { mtime = 100, len = 4096 },
+}
 local listing = {
 	["/music"] = {
 		{ url = "/music/album", cha = { is_dir = true } },
@@ -40,6 +43,13 @@ _G.fs = {
 	read_dir = function(path)
 		directory_reads = directory_reads + 1
 		return listing[tostring(path)]
+	end,
+	cha = function(path)
+		local metadata = library_metadata[tostring(path)]
+		if metadata then
+			return metadata
+		end
+		return nil, { kind = "NotFound" }
 	end,
 }
 _G.Command = function(program)
@@ -138,5 +148,28 @@ assert(#commands == 3, "a directory outside the configured root must not invoke 
 assert(directory_reads == reads_before_outside_root, "a directory outside the configured root must not be scanned")
 assert(Plugin:linemode(file("/downloads/loose.mp3")) == "—")
 assert(Plugin:card(file("/downloads/loose.mp3")):find("outside the configured music directory root"))
+
+_G.ya.async = function(callback)
+	return callback()
+end
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+Plugin:setup({ cache = true, library = "/data/library.db", directory = "/music" })
+_G.cx = { active = { current = { cwd = "/music" } } }
+Plugin:entry()
+assert(#commands == 4, "an explicit refresh seeds the opt-in cache with one fresh lookup")
+local reads_before_cache_hit = directory_reads
+subscriptions.cd()
+assert(#commands == 4, "an unchanged database reuses the opt-in cached lookup")
+assert(directory_reads == reads_before_cache_hit + 2, "a cache hit still rescans the active directory")
+library_metadata["/data/library.db"].mtime = 101
+subscriptions.cd()
+assert(#commands == 5, "a database modification invalidates the cached lookup")
+library_metadata["/data/library.db-wal"] = { mtime = 102, len = 128 }
+subscriptions.cd()
+assert(#commands == 6, "creating a SQLite WAL sidecar invalidates the cached lookup")
 
 print("adapter tests passed")

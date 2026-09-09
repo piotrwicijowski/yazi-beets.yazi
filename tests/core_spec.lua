@@ -56,6 +56,14 @@ test("recognizes paths within the configured music directory root", function()
 	assert(not Core.is_within_root("/music/../downloads", "/music"))
 end)
 
+test("validates the optional lookup-cache flag", function()
+	assert(Core.cache_enabled({}) == false)
+	assert(Core.cache_enabled({ cache = true }) == true)
+	local enabled, err = Core.cache_enabled({ cache = "yes" })
+	assert(enabled == nil)
+	assert(err:find("cache must be a boolean"))
+end)
+
 test("validates and normalizes flat exclusion lists", function()
 	local exclusions = assert(Core.validate_exclusions({
 		ignore_extensions = { "jpg", "GZ", "jpg" },
