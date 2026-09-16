@@ -152,6 +152,27 @@ test("aggregates reusable matching results for files and recursive directories",
 	assert(evaluation.statuses["/music/empty"].reason == "no candidate descendants")
 end)
 
+test("matches multiple path sets in one tree traversal", function()
+	local tree = directory("/music", {
+		file("/music/first.flac"),
+		directory("/music/album", {
+			file("/music/album/second.flac"),
+			file("/music/album/miss.flac"),
+		}),
+	})
+	local evaluations = Core.match_all(tree, {
+		{ ["/music/first.flac"] = true, ["/music/album/second.flac"] = true },
+		{ ["/music/album/second.flac"] = true },
+	})
+
+	assert(#evaluations == 2)
+	assert(evaluations[1].statuses["/music"].status == "some")
+	assert(evaluations[1].statuses["/music/album"].status == "some")
+	assert(evaluations[2].statuses["/music"].status == "some")
+	assert(evaluations[2].statuses["/music/first.flac"].status == "none")
+	assert(evaluations[2].statuses["/music/album"].matching == 1)
+end)
+
 test("classifies files and recursive directories while excluding symlinks", function()
 	local tree = directory("/music", {
 		file("/music/collected.flac"),

@@ -4,6 +4,8 @@ local Core = require(".core")
 local M = {}
 local options = {}
 local lookup_cache
+local STATUS_PUBLISH_INTERVAL = 0.05
+local TAG_PUBLISH_INTERVAL = 0.05
 
 local configured_options = ya.sync(function(state)
 	return state.options or {}
@@ -49,11 +51,13 @@ local publish_statuses = ya.sync(function(state, generation, statuses)
 	return true
 end)
 
-local publish_tag_marker = ya.sync(function(state, generation, index, marker_snapshot)
+local publish_tag_markers = ya.sync(function(state, generation, marker_snapshots)
 	if state.generation ~= generation or not state.snapshot or state.snapshot.phase ~= "streaming" then
 		return false
 	end
-	state.snapshot.tag_markers[index] = marker_snapshot
+	for index, marker_snapshot in pairs(marker_snapshots) do
+		state.snapshot.tag_markers[index] = marker_snapshot
+	end
 	ui.render()
 	return true
 end)
@@ -218,12 +222,20 @@ function M:reload(directory, force_refresh)
 	local paths
 	local collection_failure
 	local collection_attempted = false
+	local collection_cache_checked = false
+	if cache_enabled and not force_refresh then
+		collection_cache_checked = true
+		paths = cached_paths(nil, false)
+	end
 	local function resolve_paths()
 		if paths or collection_attempted then
 			return paths
 		end
 		collection_attempted = true
-		paths = cache_enabled and cached_paths(nil, force_refresh) or nil
+		if cache_enabled and not collection_cache_checked then
+			collection_cache_checked = true
+			paths = cached_paths(nil, force_refresh)
+		end
 		if paths then
 			return paths
 		end
@@ -252,6 +264,24 @@ function M:reload(directory, force_refresh)
 		return paths
 	end
 
+	local pending_statuses = {}
+	local last_status_publish = ya.time()
+	local function publish_pending_statuses(force)
+		if not next(pending_statuses) then
+			return true
+		end
+		if not force and ya.time() - last_status_publish < STATUS_PUBLISH_INTERVAL then
+			return true
+		end
+		local batch = pending_statuses
+		pending_statuses = {}
+		if not publish_statuses(generation, batch) then
+			return false
+		end
+		last_status_publish = ya.time()
+		return true
+	end
+
 	local candidates, collected = 0, 0
 	local work = {}
 	for _, entry in ipairs(entries) do
@@ -259,12 +289,13 @@ function M:reload(directory, force_refresh)
 			work[#work + 1] = entry
 		end
 	end
+	local direct_entry_count = #work
 	for _, entry in ipairs(entries) do
 		if entry.kind == "directory" then
 			work[#work + 1] = entry
 		end
 	end
-	for _, entry in ipairs(work) do
+	for work_index, entry in ipairs(work) do
 		local tree = entry
 		if entry.kind == "directory" then
 			local scan_error
@@ -276,29 +307,58 @@ function M:reload(directory, force_refresh)
 		end
 		root.children[#root.children + 1] = tree
 
-		local candidate_count = Core.candidate_count(tree, exclusions)
-		if candidate_count > 0 then
-			resolve_paths()
+		local evaluation
+		if paths then
+			evaluation = Core.evaluate(tree, paths, exclusions)
+		else
+			local candidate_count = Core.candidate_count(tree, exclusions)
+			if candidate_count > 0 then
+				resolve_paths()
+			end
+			if paths or candidate_count == 0 then
+				evaluation = Core.evaluate(tree, paths or {}, exclusions)
+			end
 		end
-		if paths or candidate_count == 0 then
-			local evaluation = Core.evaluate(tree, paths or {}, exclusions)
+		if evaluation then
 			for path, result in pairs(evaluation.statuses) do
 				statuses[path] = result
+				pending_statuses[path] = result
 			end
 			local result = evaluation.statuses[entry.path]
 			if result then
 				candidates = candidates + result.candidates
 				collected = collected + result.collected
 			end
-			if next(evaluation.statuses) and not publish_statuses(generation, evaluation.statuses) then
+			if not publish_pending_statuses(work_index == direct_entry_count) then
 				return
 			end
 		end
 	end
 
+	if not publish_pending_statuses(true) then
+		return
+	end
 	statuses[directory] = Core.directory_result(candidates, collected)
 
 	local query_results = {}
+	local pending_tag_markers = {}
+	local last_tag_publish = ya.time()
+	local function publish_pending_tag_markers(force)
+		if not next(pending_tag_markers) then
+			return true
+		end
+		if not force and ya.time() - last_tag_publish < TAG_PUBLISH_INTERVAL then
+			return true
+		end
+		local batch = pending_tag_markers
+		pending_tag_markers = {}
+		if not publish_tag_markers(generation, batch) then
+			return false
+		end
+		last_tag_publish = ya.time()
+		return true
+	end
+
 	for index, marker in ipairs(markers) do
 		local query_result = query_results[marker.query]
 		if not query_result then
@@ -325,18 +385,37 @@ function M:reload(directory, force_refresh)
 			query_results[marker.query] = query_result
 		end
 
+		if not query_result.paths then
+			tag_markers[index] = { marker = marker, phase = "unavailable", reason = query_result.reason }
+			pending_tag_markers[index] = tag_markers[index]
+			if not publish_pending_tag_markers(true) then
+				return
+			end
+		end
+	end
+
+	local matching_path_sets, matching_indexes = {}, {}
+	for _, marker in ipairs(markers) do
+		local query_result = query_results[marker.query]
+		if query_result.paths and not matching_indexes[marker.query] then
+			matching_indexes[marker.query] = #matching_path_sets + 1
+			matching_path_sets[#matching_path_sets + 1] = query_result.paths
+		end
+	end
+	local matching_evaluations = Core.match_all(root, matching_path_sets, exclusions)
+	for index, marker in ipairs(markers) do
+		local query_result = query_results[marker.query]
 		if query_result.paths then
 			tag_markers[index] = {
 				marker = marker,
 				phase = "ready",
-				statuses = Core.match(root, query_result.paths, exclusions).statuses,
+				statuses = matching_evaluations[matching_indexes[marker.query]].statuses,
 			}
-		else
-			tag_markers[index] = { marker = marker, phase = "unavailable", reason = query_result.reason }
+			pending_tag_markers[index] = tag_markers[index]
 		end
-		if not publish_tag_marker(generation, index, tag_markers[index]) then
-			return
-		end
+	end
+	if not publish_pending_tag_markers(true) then
+		return
 	end
 
 	finish_snapshot(generation, {

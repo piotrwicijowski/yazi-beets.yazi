@@ -69,7 +69,7 @@ With an explicit `directory` override, the plugin does not scan or invoke `beet`
 
 ### Optional lookup cache
 
-`cache = true` enables an in-memory cache of each successful collection or tag-marker `beet` lookup when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing those results. A change starts fresh lookups. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately.
+`cache = true` enables an in-memory cache of each successful collection or tag-marker `beet` lookup when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing those results. A change starts fresh lookups. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately. On a cache hit, each scanned subtree derives its candidate count and collection statuses in one evaluation traversal.
 
 Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. Failed lookups are never cached. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs new collection and tag-marker lookups.
 
@@ -96,7 +96,7 @@ Each entry or refresh discards the old snapshot. A manual refresh runs the colle
 
 ### Progressive updates
 
-An active directory initially displays pending collection statuses. After the beets lookup is available (immediately on an optional cache hit), direct candidate files in the active directory are published first. The plugin then scans and publishes each direct subdirectory's complete subtree in turn. Unfinished paths remain pending, including the active directory itself, until every subtree is complete. This keeps large collection roots responsive without treating incomplete work as uncollected.
+An active directory initially displays pending collection statuses. After the beets lookup is available (immediately on an optional cache hit), direct candidate files in the active directory are published first. The plugin then scans each direct subdirectory's complete subtree in turn and coalesces its status updates, publishing at most once every 50 ms. Unfinished paths remain pending, including the active directory itself, until every subtree is complete. This keeps large collection roots responsive without treating incomplete work as uncollected.
 
 ## Markers
 
@@ -115,7 +115,7 @@ A **candidate file** is any non-directory, non-symlink entry not removed by a ca
 
 A tag marker is a labelled beets item query displayed independently after the collection marker. `tag_markers` is a dense Lua array: every entry must have distinct nonblank, unpadded string `label` and `query` fields. Entries render in array order. The query is passed unchanged as one `beet list -p <query>` argument, so it accepts any beets item-query grammar; `onsync:true` and `portable:true` query flexible attributes.
 
-The linemode suffix grammar is a space-separated `label` plus glyph for every configured marker. For example, `● S● P○` means collection membership is collected, `S` matches every candidate, and `P` matches none. Tag glyphs are `●` (all candidates match), `◐` (some match), `○` (none match), `…` (lookup pending), `!` (lookup unavailable), and `—` (not applicable). They neither change collection membership nor affect candidate exclusions. A marker-query failure affects only that marker; its selected-entry card line includes the failure reason while collection status and other tag markers remain available.
+The linemode suffix grammar is a space-separated `label` plus glyph for every configured marker. For example, `● S● P○` means collection membership is collected, `S` matches every candidate, and `P` matches none. Tag glyphs are `●` (all candidates match), `◐` (some match), `○` (none match), `…` (lookup pending), `!` (lookup unavailable), and `—` (not applicable). They neither change collection membership nor affect candidate exclusions. After their lookups resolve, ready tag markers are evaluated in one tree traversal and their updates coalesce for up to 50 ms; a marker-query failure publishes immediately. A marker-query failure affects only that marker; its selected-entry card line includes the failure reason while collection status and other tag markers remain available.
 
 Malformed tag-marker configuration does not run tag queries or change collection-membership evaluation. The linemode appends `tags!`, and the selected-entry card gives the validation reason.
 

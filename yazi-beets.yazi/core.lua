@@ -356,23 +356,34 @@ function Core.match_result(candidates, matching)
 	}
 end
 
-function Core.match(tree, matching_paths, exclusions)
-	local statuses = {}
-	matching_paths = matching_paths or {}
+function Core.match_all(tree, matching_path_sets, exclusions)
+	matching_path_sets = matching_path_sets or {}
 	exclusions = exclusions or { ignore_extensions = {}, ignore_subdirectories = {} }
 
+	local evaluations = {}
+	for index, matching_paths in ipairs(matching_path_sets) do
+		evaluations[index] = { statuses = {}, matching_paths = matching_paths or {} }
+	end
+	if #evaluations == 0 then
+		return evaluations
+	end
+
 	local function excluded_result(node)
-		local result = {
-			status = "not applicable",
-			reason = "excluded by configuration",
-			candidates = 0,
-			matching = 0,
-		}
-		statuses[node.path] = result
+		local results = {}
+		for index, evaluation in ipairs(evaluations) do
+			local result = {
+				status = "not applicable",
+				reason = "excluded by configuration",
+				candidates = 0,
+				matching = 0,
+			}
+			evaluation.statuses[node.path] = result
+			results[index] = result
+		end
 		for _, child in ipairs(node.children or {}) do
 			excluded_result(child)
 		end
-		return result
+		return results
 	end
 
 	local function visit(node, inherited_exclusion)
@@ -387,32 +398,53 @@ function Core.match(tree, matching_paths, exclusions)
 			if is_excluded_file(node, exclusions) then
 				return excluded_result(node)
 			end
-			local matches = matching_paths[node.path] == true
-			local result = {
-				status = matches and "all" or "none",
-				candidates = 1,
-				matching = matches and 1 or 0,
-			}
-			statuses[node.path] = result
-			return result
+			local results = {}
+			for index, evaluation in ipairs(evaluations) do
+				local matches = evaluation.matching_paths[node.path] == true
+				local result = {
+					status = matches and "all" or "none",
+					candidates = 1,
+					matching = matches and 1 or 0,
+				}
+				evaluation.statuses[node.path] = result
+				results[index] = result
+			end
+			return results
 		end
 
-		local candidates, matching = 0, 0
+		local candidates, matching = {}, {}
+		for index in ipairs(evaluations) do
+			candidates[index] = 0
+			matching[index] = 0
+		end
 		for _, child in ipairs(node.children or {}) do
-			local result = visit(child, false)
-			if result then
-				candidates = candidates + result.candidates
-				matching = matching + result.matching
+			local results = visit(child, false)
+			if results then
+				for index, result in ipairs(results) do
+					candidates[index] = candidates[index] + result.candidates
+					matching[index] = matching[index] + result.matching
+				end
 			end
 		end
 
-		local result = Core.match_result(candidates, matching)
-		statuses[node.path] = result
-		return result
+		local results = {}
+		for index, evaluation in ipairs(evaluations) do
+			local result = Core.match_result(candidates[index], matching[index])
+			evaluation.statuses[node.path] = result
+			results[index] = result
+		end
+		return results
 	end
 
 	visit(tree, false)
-	return { statuses = statuses }
+	for _, evaluation in ipairs(evaluations) do
+		evaluation.matching_paths = nil
+	end
+	return evaluations
+end
+
+function Core.match(tree, matching_paths, exclusions)
+	return Core.match_all(tree, { matching_paths or {} }, exclusions)[1] or { statuses = {} }
 end
 
 function Core.candidate_count(tree, exclusions)

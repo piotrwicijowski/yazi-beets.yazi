@@ -5,6 +5,7 @@ local plugin_state = {}
 local commands = {}
 local renders = 0
 local render_history = {}
+local clock = 0
 local directory_reads = 0
 local subscriptions = {}
 local outputs = {
@@ -34,6 +35,10 @@ _G.ya = {
 	end,
 	async = function(callback)
 		return callback()
+	end,
+	time = function()
+		clock = clock + 0.001
+		return clock
 	end,
 }
 _G.ui = {
@@ -95,6 +100,7 @@ require = function(name)
 end
 
 local Plugin = require("main")
+local Core = require("core")
 assert(requested_modules[2] == ".core", "the core module must be required relative to the plugin")
 
 local function file(path, properties)
@@ -186,8 +192,16 @@ _G.cx = { active = { current = { cwd = "/music" } } }
 Plugin:entry()
 assert(#commands == 4, "an explicit refresh seeds the opt-in cache with one fresh lookup")
 local reads_before_cache_hit = directory_reads
+local candidate_count_calls = 0
+local original_candidate_count = Core.candidate_count
+Core.candidate_count = function(...)
+	candidate_count_calls = candidate_count_calls + 1
+	return original_candidate_count(...)
+end
 subscriptions.cd()
+Core.candidate_count = original_candidate_count
 assert(#commands == 4, "an unchanged database reuses the opt-in cached lookup")
+assert(candidate_count_calls == 0, "a collection-cache hit evaluates each subtree only once")
 assert(directory_reads == reads_before_cache_hit + 2, "a cache hit still rescans the active directory")
 library_metadata["/data/library.db"].mtime = 101
 subscriptions.cd()
@@ -398,5 +412,52 @@ outputs = {
 local commands_before_retry_after_forced_failure = #commands
 subscriptions.cd()
 assert(#commands == commands_before_retry_after_forced_failure + 2, "a failed forced refresh evicts prior collection and tag-query results")
+
+listing["/batch"] = {
+	{ url = "/batch/one", cha = { is_dir = true } },
+	{ url = "/batch/two", cha = { is_dir = true } },
+	{ url = "/batch/three", cha = { is_dir = true } },
+	{ url = "/batch/four", cha = { is_dir = true } },
+}
+for _, name in ipairs({ "one", "two", "three", "four" }) do
+	listing["/batch/" .. name] = { { url = "/batch/" .. name .. "/song.flac", cha = {} } }
+end
+outputs = {
+	{ status = { success = true }, stdout = table.concat({
+		"/batch/one/song.flac",
+		"/batch/two/song.flac",
+		"/batch/three/song.flac",
+		"/batch/four/song.flac",
+	}, "\n") .. "\n" },
+}
+Plugin:setup({})
+_G.cx = { active = { current = { cwd = "/batch" } } }
+local renders_before_batched_subtrees = renders
+Plugin:entry()
+assert(
+	renders == renders_before_batched_subtrees + 4,
+	"a fast run batches all direct-subdirectory statuses into one redraw"
+)
+assert(Plugin:linemode(file("/batch/four/song.flac")) == "●", "the final snapshot retains every batched status")
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+Plugin:setup({
+	tag_markers = {
+		{ label = "S", query = "onsync:true" },
+		{ label = "P", query = "portable:true" },
+	},
+})
+_G.cx = { active = { current = { cwd = "/music" } } }
+local renders_before_batched_tags = renders
+Plugin:entry()
+assert(
+	renders == renders_before_batched_tags + 6,
+	"fast tag-marker results publish together in one redraw"
+)
+assert(Plugin:linemode(file("/music/album/song.flac")) == "● S● P○", "the final snapshot retains every batched tag marker")
 
 print("adapter tests passed")
