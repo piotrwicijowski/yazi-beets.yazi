@@ -35,6 +35,12 @@ beets:setup({
   -- Omit either list, or use an empty list, to exclude nothing.
   -- ignore_extensions = { "jpg", "png" },
   -- ignore_subdirectories = { "Artwork", "Downloads" },
+
+  -- Optional labelled beets item queries, displayed after collection status.
+  -- tag_markers = {
+  --   { label = "S", query = "onsync:true" },
+  --   { label = "P", query = "portable:true" },
+  -- },
 })
 
 function Linemode:beets()
@@ -63,9 +69,9 @@ With an explicit `directory` override, the plugin does not scan or invoke `beet`
 
 ### Optional lookup cache
 
-`cache = true` enables an in-memory cache of successful `beet` lookup output when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing that output. A change starts a fresh lookup. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately.
+`cache = true` enables an in-memory cache of each successful collection or tag-marker `beet` lookup when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing those results. A change starts fresh lookups. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately.
 
-Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs a new lookup.
+Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. Failed lookups are never cached. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs new collection and tag-marker lookups.
 
 ### Candidate exclusions
 
@@ -86,7 +92,7 @@ run = "plugin yazi-beets"
 desc = "Refresh beets collection status"
 ```
 
-Each entry or refresh discards the old snapshot. The default behavior does not poll or keep a session-wide cache; the optional lookup cache above changes only the lookup behavior on directory entry.
+Each entry or refresh discards the old snapshot. A manual refresh runs the collection lookup and every configured tag-marker lookup again, even when the optional lookup cache is enabled. The default behavior does not poll or keep a session-wide cache; the optional lookup cache above changes only the lookup behavior on directory entry.
 
 ### Progressive updates
 
@@ -104,6 +110,14 @@ An active directory initially displays pending collection statuses. After the be
 | `—` | not applicable (excluded by configuration or no candidate descendants) |
 
 A **candidate file** is any non-directory, non-symlink entry not removed by a candidate exclusion. Directories aggregate every recursive candidate descendant. Pending and unavailable results are never evidence that a path is uncollected.
+
+### Tag markers
+
+A tag marker is a labelled beets item query displayed independently after the collection marker. `tag_markers` is a dense Lua array: every entry must have distinct nonblank, unpadded string `label` and `query` fields. Entries render in array order. The query is passed unchanged as one `beet list -p <query>` argument, so it accepts any beets item-query grammar; `onsync:true` and `portable:true` query flexible attributes.
+
+The linemode suffix grammar is a space-separated `label` plus glyph for every configured marker. For example, `● S● P○` means collection membership is collected, `S` matches every candidate, and `P` matches none. Tag glyphs are `●` (all candidates match), `◐` (some match), `○` (none match), `…` (lookup pending), `!` (lookup unavailable), and `—` (not applicable). They neither change collection membership nor affect candidate exclusions. A marker-query failure affects only that marker; its selected-entry card line includes the failure reason while collection status and other tag markers remain available.
+
+Malformed tag-marker configuration does not run tag queries or change collection-membership evaluation. The linemode appends `tags!`, and the selected-entry card gives the validation reason.
 
 ## Selected-entry card and ordinary previews
 
@@ -130,12 +144,4 @@ Run deterministic fixtures and syntax checks:
 make check
 ```
 
-For a real fixture beets library, manually verify:
-
-1. markers progress from `…` to their completed values after opening a directory;
-2. `Ctrl-r` performs one new lookup and a bad override shows `!`, not `○`; and
-3. with `cache = true` and an explicit override, revisiting an unchanged library avoids `beet`, while changing the database or its `-wal` sidecar triggers a new lookup;
-4. default and paired-override lookups use the expected library;
-5. empty, all-collected, all-uncollected, mixed, symlink-containing, and excluded directories aggregate correctly;
-6. extension and subdirectory exclusions show `—`, including an active directory excluded by basename, and a malformed list shows `!`; and
-7. the opt-in card is readable, shows recovery guidance on failure, and removing its preview rule restores ordinary Yazi previews.
+For a real fixture beets library, follow [`tests/manual-fixture.md`](tests/manual-fixture.md). It includes collection status, exclusions, two flexible-attribute tag markers, query failure isolation, and forced refresh after a flexible-attribute change.
