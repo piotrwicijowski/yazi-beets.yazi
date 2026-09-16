@@ -110,19 +110,32 @@ local function cache_fingerprint()
 	return database .. "/" .. wal
 end
 
-local function cached_paths(force_refresh)
+local function cached_paths(query, force_refresh)
 	if force_refresh or not lookup_cache then
 		return nil
 	end
 	local fingerprint = cache_fingerprint()
 	if fingerprint and lookup_cache.fingerprint == fingerprint then
-		return lookup_cache.paths
+		return lookup_cache.paths_by_query[query or false]
 	end
 	return nil
 end
 
+local function cache_paths(query, paths, fingerprint)
+	if not fingerprint or fingerprint ~= cache_fingerprint() then
+		return
+	end
+	if not lookup_cache or lookup_cache.fingerprint ~= fingerprint then
+		lookup_cache = { fingerprint = fingerprint, paths_by_query = {} }
+	end
+	lookup_cache.paths_by_query[query or false] = paths
+end
+
 function M:reload(directory, force_refresh)
 	options = configured_options()
+	if force_refresh then
+		lookup_cache = nil
+	end
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
 	local cache_enabled, cache_error = Core.cache_enabled(options)
@@ -210,7 +223,7 @@ function M:reload(directory, force_refresh)
 			return paths
 		end
 		collection_attempted = true
-		paths = cache_enabled and cached_paths(force_refresh) or nil
+		paths = cache_enabled and cached_paths(nil, force_refresh) or nil
 		if paths then
 			return paths
 		end
@@ -233,8 +246,8 @@ function M:reload(directory, force_refresh)
 		end
 
 		paths = Core.collected_paths(output.stdout)
-		if fingerprint and fingerprint == cache_fingerprint() then
-			lookup_cache = { fingerprint = fingerprint, paths = paths }
+		if cache_enabled then
+			cache_paths(nil, paths, fingerprint)
 		end
 		return paths
 	end
@@ -289,18 +302,25 @@ function M:reload(directory, force_refresh)
 	for index, marker in ipairs(markers) do
 		local query_result = query_results[marker.query]
 		if not query_result then
-			local marker_command = assert(Core.lookup_command(options, marker.query))
-			local output, command_error = Command(marker_command.program):arg(marker_command.args):output()
-			if not output then
-				query_result = { reason = "could not start beet: " .. tostring(command_error) }
-			elseif not output.status.success then
-				query_result = { reason = string.format(
-					"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
-				) }
-			elseif type(output.stdout) ~= "string" then
-				query_result = { reason = "beet output could not be read" }
-			else
-				query_result = { paths = Core.collected_paths(output.stdout) }
+			query_result = { paths = cache_enabled and cached_paths(marker.query, force_refresh) or nil }
+			if not query_result.paths then
+				local marker_command = assert(Core.lookup_command(options, marker.query))
+				local fingerprint = cache_enabled and cache_fingerprint() or nil
+				local output, command_error = Command(marker_command.program):arg(marker_command.args):output()
+				if not output then
+					query_result = { reason = "could not start beet: " .. tostring(command_error) }
+				elseif not output.status.success then
+					query_result = { reason = string.format(
+						"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
+					) }
+				elseif type(output.stdout) ~= "string" then
+					query_result = { reason = "beet output could not be read" }
+				else
+					query_result = { paths = Core.collected_paths(output.stdout) }
+					if cache_enabled then
+						cache_paths(marker.query, query_result.paths, fingerprint)
+					end
+				end
 			end
 			query_results[marker.query] = query_result
 		end

@@ -306,4 +306,97 @@ assert(#commands == commands_before_invalid_markers + 1, "invalid tag-marker con
 assert(Plugin:linemode(file("/music/album/song.flac")) == "● tags!")
 assert(Plugin:card(file("/music/album/song.flac")):find("Tag markers: Unavailable: invalid configuration: tag_markers must be a dense array"))
 
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+Plugin:setup({
+	cache = true,
+	library = "/data/library.db",
+	directory = "/music",
+	tag_markers = {
+		{ label = "S", query = "onsync:true" },
+		{ label = "P", query = "portable:true" },
+	},
+})
+_G.cx = { active = { current = { cwd = "/music" } } }
+local commands_before_tag_cache = #commands
+Plugin:entry()
+assert(#commands == commands_before_tag_cache + 3, "an initial cached configuration looks up collection and each tag query")
+local reads_before_tag_cache_hit = directory_reads
+subscriptions.cd()
+assert(#commands == commands_before_tag_cache + 3, "an unchanged library reuses every successful tag-query lookup")
+assert(directory_reads == reads_before_tag_cache_hit + 2, "a tag-query cache hit still rescans the active directory")
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = false, code = 1 }, stdout = "", stderr = "temporary query failure" },
+}
+Plugin:setup({
+	cache = true,
+	library = "/data/library.db",
+	directory = "/music",
+	tag_markers = {
+		{ label = "S", query = "onsync:true" },
+		{ label = "P", query = "portable:true" },
+	},
+})
+local commands_before_failed_cached_marker = #commands
+Plugin:entry()
+assert(#commands == commands_before_failed_cached_marker + 3, "an initial marker failure still runs every lookup")
+outputs = { { status = { success = true }, stdout = "/music/loose.mp3\n" } }
+subscriptions.cd()
+assert(#commands == commands_before_failed_cached_marker + 4, "a failed tag query is retried while successful lookups use the cache")
+assert(Plugin:linemode(file("/music/loose.mp3")) == "○ S○ P●")
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+local commands_before_forced_tag_refresh = #commands
+Plugin:entry()
+assert(#commands == commands_before_forced_tag_refresh + 3, "a functional refresh bypasses cached collection and tag-query lookups")
+
+library_metadata["/data/library.db"].mtime = 102
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+local commands_before_tag_cache_invalidation = #commands
+subscriptions.cd()
+assert(#commands == commands_before_tag_cache_invalidation + 3, "a library change invalidates cached collection and tag-query lookups")
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+Plugin:setup({
+	cache = true,
+	library = "/data/library.db",
+	directory = "/music",
+	tag_markers = { { label = "Synced", query = "onsync:true" } },
+})
+local commands_before_tag_cache_reconfiguration = #commands
+subscriptions.cd()
+assert(#commands == commands_before_tag_cache_reconfiguration + 2, "a configuration change clears cached collection and tag-query lookups")
+
+outputs = {
+	{ status = { success = false, code = 1 }, stdout = "", stderr = "temporary collection failure" },
+	{ status = { success = false, code = 1 }, stdout = "", stderr = "temporary marker failure" },
+}
+local commands_before_failed_forced_refresh = #commands
+Plugin:entry()
+assert(#commands == commands_before_failed_forced_refresh + 2, "a forced refresh runs each configured lookup even after caching")
+outputs = {
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+local commands_before_retry_after_forced_failure = #commands
+subscriptions.cd()
+assert(#commands == commands_before_retry_after_forced_failure + 2, "a failed forced refresh evicts prior collection and tag-query results")
+
 print("adapter tests passed")
