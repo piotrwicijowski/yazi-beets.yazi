@@ -249,50 +249,26 @@ local function is_excluded_directory(node, exclusions)
 	return name and exclusions.ignore_subdirectories[name]
 end
 
-function Core.candidate_count(tree, exclusions)
-	exclusions = exclusions or { ignore_extensions = {}, ignore_subdirectories = {} }
-
-	local function count(node, inherited_exclusion)
-		if node.kind == "symlink" then
-			return 0
-		end
-		if inherited_exclusion or (node.kind == "directory" and is_excluded_directory(node, exclusions)) then
-			return 0
-		end
-		if node.kind == "file" then
-			return is_excluded_file(node, exclusions) and 0 or 1
-		end
-
-		local candidates = 0
-		for _, child in ipairs(node.children or {}) do
-			candidates = candidates + count(child, false)
-		end
-		return candidates
-	end
-
-	return count(tree, false)
-end
-
-function Core.directory_result(candidates, collected)
-	local status = "mixed"
+function Core.match_result(candidates, matching)
+	local status = "some"
 	if candidates == 0 then
 		status = "not applicable"
-	elseif collected == candidates then
-		status = "collected"
-	elseif collected == 0 then
-		status = "uncollected"
+	elseif matching == candidates then
+		status = "all"
+	elseif matching == 0 then
+		status = "none"
 	end
 	return {
 		status = status,
 		candidates = candidates,
-		collected = collected,
+		matching = matching,
 		reason = status == "not applicable" and "no candidate descendants" or nil,
 	}
 end
 
-function Core.evaluate(tree, collected_paths, exclusions)
+function Core.match(tree, matching_paths, exclusions)
 	local statuses = {}
-	collected_paths = collected_paths or {}
+	matching_paths = matching_paths or {}
 	exclusions = exclusions or { ignore_extensions = {}, ignore_subdirectories = {} }
 
 	local function excluded_result(node)
@@ -300,7 +276,7 @@ function Core.evaluate(tree, collected_paths, exclusions)
 			status = "not applicable",
 			reason = "excluded by configuration",
 			candidates = 0,
-			collected = 0,
+			matching = 0,
 		}
 		statuses[node.path] = result
 		for _, child in ipairs(node.children or {}) do
@@ -321,31 +297,64 @@ function Core.evaluate(tree, collected_paths, exclusions)
 			if is_excluded_file(node, exclusions) then
 				return excluded_result(node)
 			end
-			local collected = collected_paths[node.path] == true
+			local matches = matching_paths[node.path] == true
 			local result = {
-				status = collected and "collected" or "uncollected",
+				status = matches and "all" or "none",
 				candidates = 1,
-				collected = collected and 1 or 0,
+				matching = matches and 1 or 0,
 			}
 			statuses[node.path] = result
 			return result
 		end
 
-		local candidates, collected = 0, 0
+		local candidates, matching = 0, 0
 		for _, child in ipairs(node.children or {}) do
 			local result = visit(child, false)
 			if result then
 				candidates = candidates + result.candidates
-				collected = collected + result.collected
+				matching = matching + result.matching
 			end
 		end
 
-		local result = Core.directory_result(candidates, collected)
+		local result = Core.match_result(candidates, matching)
 		statuses[node.path] = result
 		return result
 	end
 
 	visit(tree, false)
+	return { statuses = statuses }
+end
+
+function Core.candidate_count(tree, exclusions)
+	local result = Core.match(tree, {}, exclusions).statuses[tree.path]
+	return result and result.candidates or 0
+end
+
+function Core.directory_result(candidates, collected)
+	local result = Core.match_result(candidates, collected)
+	local statuses = {
+		all = "collected",
+		some = "mixed",
+		none = "uncollected",
+		["not applicable"] = "not applicable",
+	}
+	return {
+		status = statuses[result.status],
+		candidates = result.candidates,
+		collected = result.matching,
+		reason = result.reason,
+	}
+end
+
+function Core.evaluate(tree, collected_paths, exclusions)
+	local matching = Core.match(tree, collected_paths, exclusions)
+	local statuses = {}
+	for path, result in pairs(matching.statuses) do
+		statuses[path] = Core.directory_result(result.candidates, result.matching)
+		if result.reason == "excluded by configuration" then
+			statuses[path].reason = result.reason
+		end
+	end
 	return { statuses = statuses }
 end
 

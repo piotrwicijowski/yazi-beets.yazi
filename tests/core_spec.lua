@@ -95,6 +95,32 @@ local function file(path)
 	return { path = path, kind = "file" }
 end
 
+test("aggregates reusable matching results for files and recursive directories", function()
+	local tree = directory("/music", {
+		file("/music/full.flac"),
+		directory("/music/mixed", {
+			file("/music/mixed/match.flac"),
+			file("/music/mixed/miss.flac"),
+		}),
+		directory("/music/none", { file("/music/none/miss.flac") }),
+		directory("/music/empty", {}),
+	})
+	local evaluation = Core.match(tree, {
+		["/music/full.flac"] = true,
+		["/music/mixed/match.flac"] = true,
+	})
+
+	assert(evaluation.statuses["/music/full.flac"].status == "all")
+	assert(evaluation.statuses["/music/mixed/miss.flac"].status == "none")
+	assert(evaluation.statuses["/music/mixed"].status == "some")
+	assert(evaluation.statuses["/music/mixed"].candidates == 2)
+	assert(evaluation.statuses["/music/mixed"].matching == 1)
+	assert(evaluation.statuses["/music/none"].status == "none")
+	assert(evaluation.statuses["/music/none"].matching == 0)
+	assert(evaluation.statuses["/music/empty"].status == "not applicable")
+	assert(evaluation.statuses["/music/empty"].reason == "no candidate descendants")
+end)
+
 test("classifies files and recursive directories while excluding symlinks", function()
 	local tree = directory("/music", {
 		file("/music/collected.flac"),
@@ -116,6 +142,12 @@ test("classifies files and recursive directories while excluding symlinks", func
 	assert(evaluation.statuses["/music"].candidates == 2)
 	assert(evaluation.statuses["/music"].collected == 1)
 	assert(evaluation.statuses["/music/album/linked.flac"] == nil)
+end)
+
+test("does not count a symlink root as a candidate", function()
+	local symlink = { path = "/music/link.flac", kind = "symlink" }
+	assert(Core.candidate_count(symlink) == 0)
+	assert(next(Core.evaluate(symlink, {}).statuses) == nil)
 end)
 
 test("excludes configured extensions and directory subtrees", function()
