@@ -775,6 +775,9 @@ end
 
 function M:linemode(file)
 	local snapshot = snapshot_for()
+	if snapshot and snapshot.outside_music_directory_root then
+		return ""
+	end
 	local status = Core.status_for(snapshot, tostring(file.url))
 	if file.cha and file.cha.is_symlink and (not status or status.status ~= "not applicable") then
 		return ""

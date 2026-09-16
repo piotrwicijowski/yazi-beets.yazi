@@ -66,7 +66,7 @@ beet -l <library> -d <directory> list -p
 
 With neither field, the plugin runs `beet list -p` and lets beets load its effective default configuration. Each active-directory snapshot intersects that full library path set with its recursively scanned candidates. This avoids beets’ configured-root `path:` query edge case. A partial or empty override is unavailable; it is never treated as uncollected.
 
-With an explicit `directory` override, the plugin does not scan or invoke `beet` for an active directory outside that root. Those entries display `—` because collection membership is not evaluated there. This guard is unavailable with the default configuration because the effective beets root is not known to the plugin.
+With an explicit `directory` override, the plugin does not scan or invoke `beet` for an active directory outside that root. Its linemode is hidden there because collection membership is not evaluated. The selected-entry card still explains this state. This guard is unavailable with the default configuration because the effective beets root is not known to the plugin.
 
 ### Optional lookup cache
 

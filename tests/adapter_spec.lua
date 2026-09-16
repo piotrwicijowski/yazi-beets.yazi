@@ -191,7 +191,7 @@ local reads_before_outside_root = directory_reads
 Plugin:entry()
 assert(#commands == 3, "a directory outside the configured root must not invoke beet")
 assert(directory_reads == reads_before_outside_root, "a directory outside the configured root must not be scanned")
-assert(Plugin:linemode(file("/downloads/loose.mp3")) == "—")
+assert(Plugin:linemode(file("/downloads/loose.mp3")) == "", "linemode is hidden outside the configured root")
 assert(Plugin:card(file("/downloads/loose.mp3")):find("outside the configured music directory root"))
 
 _G.ya.async = function(callback)
@@ -323,7 +323,7 @@ _G.cx = { active = { current = { cwd = "/downloads" } } }
 local commands_before_outside_root_markers = #commands
 Plugin:entry()
 assert(#commands == commands_before_outside_root_markers, "outside-root tag markers must not invoke beet")
-assert(Plugin:linemode(file("/downloads/loose.mp3")) == "— S— P—")
+assert(Plugin:linemode(file("/downloads/loose.mp3")) == "", "tag markers do not make an outside-root linemode visible")
 assert(Plugin:card(file("/downloads/loose.mp3")):find("outside the configured music directory root"))
 
 outputs = { { status = { success = true }, stdout = "/music/album/song.flac\n" } }
