@@ -263,6 +263,9 @@ function Core.tag_marker_status_for(snapshot, path)
 	if snapshot.phase == "unavailable" then
 		return { status = "unavailable", reason = snapshot.reason }
 	end
+	if snapshot.outside_music_directory_root then
+		return { status = "not applicable", reason = "outside configured music directory root" }
+	end
 	local result = snapshot.statuses and snapshot.statuses[path]
 	if result then
 		return result

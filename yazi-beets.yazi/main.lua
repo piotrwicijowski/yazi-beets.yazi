@@ -49,6 +49,15 @@ local publish_statuses = ya.sync(function(state, generation, statuses)
 	return true
 end)
 
+local publish_tag_marker = ya.sync(function(state, generation, index, marker_snapshot)
+	if state.generation ~= generation or not state.snapshot or state.snapshot.phase ~= "streaming" then
+		return false
+	end
+	state.snapshot.tag_markers[index] = marker_snapshot
+	ui.render()
+	return true
+end)
+
 local function library_identity()
 	if options.library and options.directory then
 		return string.format("%s (root: %s)", options.library, options.directory)
@@ -127,9 +136,10 @@ function M:reload(directory, force_refresh)
 		return
 	end
 	local markers, marker_error = Core.validate_tag_markers(options)
+	local tag_marker_configuration_error
 	if not markers then
-		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. marker_error))
-		return
+		markers = {}
+		tag_marker_configuration_error = "invalid configuration: " .. marker_error
 	end
 
 	local command, configuration_error = Core.lookup_command(options)
@@ -139,10 +149,20 @@ function M:reload(directory, force_refresh)
 	end
 
 	if options.directory and not Core.is_within_root(directory, options.directory) then
+		local tag_markers = {}
+		for index, marker in ipairs(markers) do
+			tag_markers[index] = {
+				marker = marker,
+				phase = "ready",
+				outside_music_directory_root = true,
+			}
+		end
 		finish_snapshot(generation, {
 			directory = directory,
 			phase = "ready",
 			outside_music_directory_root = true,
+			tag_markers = tag_markers,
+			tag_marker_configuration_error = tag_marker_configuration_error,
 			library = library_identity(),
 		})
 		return
@@ -176,16 +196,20 @@ function M:reload(directory, force_refresh)
 		phase = "streaming",
 		statuses = statuses,
 		tag_markers = tag_markers,
+		tag_marker_configuration_error = tag_marker_configuration_error,
 		library = library_identity(),
 	}) then
 		return
 	end
 
 	local paths
+	local collection_failure
+	local collection_attempted = false
 	local function resolve_paths()
-		if paths then
+		if paths or collection_attempted then
 			return paths
 		end
+		collection_attempted = true
 		paths = cache_enabled and cached_paths(force_refresh) or nil
 		if paths then
 			return paths
@@ -194,17 +218,17 @@ function M:reload(directory, force_refresh)
 		local fingerprint = cache_enabled and cache_fingerprint() or nil
 		local output, command_error = Command(command.program):arg(command.args):output()
 		if not output then
-			finish_snapshot(generation, failure_snapshot(directory, "could not start beet: " .. tostring(command_error)))
+			collection_failure = "could not start beet: " .. tostring(command_error)
 			return nil
 		end
 		if not output.status.success then
-			finish_snapshot(generation, failure_snapshot(directory, string.format(
+			collection_failure = string.format(
 				"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
-			)))
+			)
 			return nil
 		end
 		if type(output.stdout) ~= "string" then
-			finish_snapshot(generation, failure_snapshot(directory, "beet output could not be read"))
+			collection_failure = "beet output could not be read"
 			return nil
 		end
 
@@ -240,20 +264,22 @@ function M:reload(directory, force_refresh)
 		root.children[#root.children + 1] = tree
 
 		local candidate_count = Core.candidate_count(tree, exclusions)
-		if candidate_count > 0 and not resolve_paths() then
-			return
+		if candidate_count > 0 then
+			resolve_paths()
 		end
-		local evaluation = Core.evaluate(tree, paths or {}, exclusions)
-		for path, result in pairs(evaluation.statuses) do
-			statuses[path] = result
-		end
-		local result = evaluation.statuses[entry.path]
-		if result then
-			candidates = candidates + result.candidates
-			collected = collected + result.collected
-		end
-		if next(evaluation.statuses) and not publish_statuses(generation, evaluation.statuses) then
-			return
+		if paths or candidate_count == 0 then
+			local evaluation = Core.evaluate(tree, paths or {}, exclusions)
+			for path, result in pairs(evaluation.statuses) do
+				statuses[path] = result
+			end
+			local result = evaluation.statuses[entry.path]
+			if result then
+				candidates = candidates + result.candidates
+				collected = collected + result.collected
+			end
+			if next(evaluation.statuses) and not publish_statuses(generation, evaluation.statuses) then
+				return
+			end
 		end
 	end
 
@@ -288,13 +314,18 @@ function M:reload(directory, force_refresh)
 		else
 			tag_markers[index] = { marker = marker, phase = "unavailable", reason = query_result.reason }
 		end
+		if not publish_tag_marker(generation, index, tag_markers[index]) then
+			return
+		end
 	end
 
 	finish_snapshot(generation, {
 		directory = directory,
-		phase = "ready",
+		phase = collection_failure and "unavailable" or "ready",
+		reason = collection_failure,
 		statuses = statuses,
 		tag_markers = tag_markers,
+		tag_marker_configuration_error = tag_marker_configuration_error,
 		library = library_identity(),
 	})
 end
@@ -326,6 +357,9 @@ function M:linemode(file)
 		local marker_status = Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
 		markers[#markers + 1] = marker_snapshot.marker.label .. Core.tag_marker_glyph(marker_status and marker_status.status)
 	end
+	if snapshot and snapshot.tag_marker_configuration_error then
+		markers[#markers + 1] = "tags!"
+	end
 	return table.concat(markers, " ")
 end
 
@@ -341,6 +375,9 @@ function M:card(file)
 			marker_snapshot.marker,
 			Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
 		)
+	end
+	if snapshot and snapshot.tag_marker_configuration_error then
+		card = card .. "\nTag markers: Unavailable: " .. snapshot.tag_marker_configuration_error
 	end
 	return card
 end

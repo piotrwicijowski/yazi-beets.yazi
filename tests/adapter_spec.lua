@@ -41,10 +41,15 @@ _G.ui = {
 		renders = renders + 1
 		local snapshot = plugin_state.snapshot or {}
 		local statuses = snapshot.statuses or {}
+		local marker_phases = {}
+		for index, marker_snapshot in ipairs(snapshot.tag_markers or {}) do
+			marker_phases[index] = marker_snapshot.phase
+		end
 		render_history[#render_history + 1] = {
 			phase = snapshot.phase,
 			album = statuses["/music/album"] and statuses["/music/album"].status,
 			loose = statuses["/music/loose.mp3"] and statuses["/music/loose.mp3"].status,
+			marker_phases = marker_phases,
 		}
 	end,
 }
@@ -236,5 +241,69 @@ local marker_card = Plugin:card(file("/music"))
 assert(marker_card:find("Tag marker S: Some %(1/2 matching%)"))
 assert(marker_card:find("Tag marker P: Some %(1/2 matching%)"))
 assert(marker_card:find("Tag marker Q: Some %(1/2 matching%)"))
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = false, code = 1 }, stdout = "", stderr = "invalid query" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+Plugin:setup({
+	tag_markers = {
+		{ label = "S", query = "broken:true" },
+		{ label = "P", query = "portable:true" },
+	},
+})
+local commands_before_failed_marker = #commands
+Plugin:entry()
+assert(#commands == commands_before_failed_marker + 3, "a failed marker query must not prevent another query")
+assert(Plugin:linemode(file("/music/album/song.flac")) == "● S! P●")
+assert(Plugin:card(file("/music/album/song.flac")):find("Tag marker S: Unavailable: beet exited with code 1: invalid query"))
+local saw_pending_markers, saw_isolated_failure = false, false
+for _, snapshot in ipairs(render_history) do
+	if snapshot.phase == "streaming" and snapshot.marker_phases[1] == "pending" and snapshot.marker_phases[2] == "pending" then
+		saw_pending_markers = true
+	end
+	if snapshot.phase == "streaming" and snapshot.marker_phases[1] == "unavailable" and snapshot.marker_phases[2] == "pending" then
+		saw_isolated_failure = true
+	end
+end
+assert(saw_pending_markers, "tag markers render as pending before their queries finish")
+assert(saw_isolated_failure, "a failed marker publishes without changing another marker")
+
+outputs = {
+	{ status = { success = false, code = 1 }, stdout = "", stderr = "database unavailable" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+Plugin:setup({ tag_markers = { { label = "S", query = "onsync:true" } } })
+local commands_before_failed_collection = #commands
+Plugin:entry()
+assert(#commands == commands_before_failed_collection + 2, "a failed collection lookup must not prevent tag queries")
+assert(Plugin:linemode(file("/music/album/song.flac")) == "! S●")
+assert(Plugin:card(file("/music/album/song.flac")):find("Collection status: Unavailable"))
+assert(Plugin:card(file("/music/album/song.flac")):find("Tag marker S: All %(1/1 matching%)"))
+
+Plugin:setup({
+	library = "/data/library.db",
+	directory = "/music",
+	tag_markers = {
+		{ label = "S", query = "onsync:true" },
+		{ label = "P", query = "portable:true" },
+	},
+})
+_G.cx = { active = { current = { cwd = "/downloads" } } }
+local commands_before_outside_root_markers = #commands
+Plugin:entry()
+assert(#commands == commands_before_outside_root_markers, "outside-root tag markers must not invoke beet")
+assert(Plugin:linemode(file("/downloads/loose.mp3")) == "— S— P—")
+assert(Plugin:card(file("/downloads/loose.mp3")):find("outside the configured music directory root"))
+
+outputs = { { status = { success = true }, stdout = "/music/album/song.flac\n" } }
+Plugin:setup({ tag_markers = "onsync:true" })
+_G.cx = { active = { current = { cwd = "/music" } } }
+local commands_before_invalid_markers = #commands
+Plugin:entry()
+assert(#commands == commands_before_invalid_markers + 1, "invalid tag-marker configuration runs collection only")
+assert(Plugin:linemode(file("/music/album/song.flac")) == "● tags!")
+assert(Plugin:card(file("/music/album/song.flac")):find("Tag markers: Unavailable: invalid configuration: tag_markers must be a dense array"))
 
 print("adapter tests passed")
