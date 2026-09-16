@@ -210,4 +210,31 @@ assert(
 	"a functional refresh preserves configured exclusions"
 )
 
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+Plugin:setup({
+	tag_markers = {
+		{ label = "S", query = "onsync:true" },
+		{ label = "P", query = "portable:true" },
+		{ label = "Q", query = "onsync:true" },
+	},
+})
+_G.cx = { active = { current = { cwd = "/music" } } }
+local commands_before_markers = #commands
+Plugin:entry()
+assert(#commands == commands_before_markers + 3, "collection plus one lookup per distinct tag query")
+assert(table.concat(commands[commands_before_markers + 2].args, "|") == "list|-p|onsync:true", "tag query is one command argument")
+assert(table.concat(commands[commands_before_markers + 3].args, "|") == "list|-p|portable:true")
+assert(Plugin:linemode(file("/music/album/song.flac")) == "● S● P○ Q●")
+assert(Plugin:linemode(file("/music/loose.mp3")) == "○ S○ P● Q○")
+assert(Plugin:linemode(file("/music/album")) == "● S● P○ Q●")
+assert(Plugin:linemode(file("/music")) == "◐ S◐ P◐ Q◐")
+local marker_card = Plugin:card(file("/music"))
+assert(marker_card:find("Tag marker S: Some %(1/2 matching%)"))
+assert(marker_card:find("Tag marker P: Some %(1/2 matching%)"))
+assert(marker_card:find("Tag marker Q: Some %(1/2 matching%)"))
+
 print("adapter tests passed")

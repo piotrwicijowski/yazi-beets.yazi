@@ -1,25 +1,23 @@
 local Core = {}
 
-function Core.lookup_command(options)
+function Core.lookup_command(options, query)
 	options = options or {}
 
 	local library = options.library
 	local music_directory = options.directory
+	local args
 	if library == nil and music_directory == nil then
-		return {
-			program = "beet",
-			args = { "list", "-p" },
-		}, nil
-	end
-
-	if type(library) ~= "string" or library == "" or type(music_directory) ~= "string" or music_directory == "" then
+		args = { "list", "-p" }
+	elseif type(library) ~= "string" or library == "" or type(music_directory) ~= "string" or music_directory == "" then
 		return nil, "Set both non-empty library and directory paths, or neither."
+	else
+		args = { "-l", library, "-d", music_directory, "list", "-p" }
 	end
 
-	return {
-		program = "beet",
-		args = { "-l", library, "-d", music_directory, "list", "-p" },
-	}, nil
+	if query ~= nil then
+		args[#args + 1] = query
+	end
+	return { program = "beet", args = args }, nil
 end
 
 function Core.is_within_root(path, root)
@@ -59,6 +57,47 @@ function Core.cache_enabled(options)
 		return nil, "cache must be a boolean"
 	end
 	return options.cache == true
+end
+
+function Core.validate_tag_markers(options)
+	if type(options) ~= "table" then
+		return nil, "setup options must be a table"
+	end
+	local markers = options.tag_markers
+	if markers == nil then
+		return {}
+	end
+	if type(markers) ~= "table" then
+		return nil, "tag_markers must be a dense array"
+	end
+
+	local max_index = 0
+	for index in pairs(markers) do
+		if type(index) ~= "number" or index < 1 or index % 1 ~= 0 then
+			return nil, "tag_markers must be a dense array"
+		end
+		max_index = math.max(max_index, index)
+	end
+
+	local normalized, labels = {}, {}
+	for index = 1, max_index do
+		local marker = markers[index]
+		if type(marker) ~= "table" then
+			return nil, string.format("tag_markers[%d] must be a table", index)
+		end
+		for _, field in ipairs({ "label", "query" }) do
+			local value = marker[field]
+			if type(value) ~= "string" or value == "" or value:match("^%s") or value:match("%s$") then
+				return nil, string.format("tag_markers[%d].%s must be a nonblank, unpadded string", index, field)
+			end
+		end
+		if labels[marker.label] then
+			return nil, string.format("tag_markers[%d].label duplicates %q", index, marker.label)
+		end
+		labels[marker.label] = true
+		normalized[#normalized + 1] = { label = marker.label, query = marker.query }
+	end
+	return normalized
 end
 
 function Core.validate_exclusions(options)
@@ -155,6 +194,40 @@ function Core.marker(status)
 	return MARKERS[status] or ""
 end
 
+local TAG_MARKERS = {
+	all = "●",
+	some = "◐",
+	none = "○",
+	unavailable = "!",
+	pending = "…",
+	["not applicable"] = "—",
+}
+
+local TAG_TITLES = {
+	all = "All",
+	some = "Some",
+	none = "None",
+	unavailable = "Unavailable",
+	pending = "Pending",
+	["not applicable"] = "Not applicable",
+}
+
+function Core.tag_marker_glyph(status)
+	return TAG_MARKERS[status] or ""
+end
+
+function Core.tag_marker_card(marker, result)
+	result = result or { status = "pending" }
+	local line = string.format("Tag marker %s: %s", marker.label, TAG_TITLES[result.status] or "Unavailable")
+	if result.candidates ~= nil then
+		line = line .. string.format(" (%d/%d matching)", result.matching or 0, result.candidates)
+	end
+	if result.status == "unavailable" then
+		line = line .. ": " .. (result.reason or "unknown failure")
+	end
+	return line
+end
+
 function Core.collected_paths(output)
 	local paths = {}
 	for path in output:gmatch("[^\r\n]+") do
@@ -179,6 +252,20 @@ function Core.status_for(snapshot, path)
 	end
 	if snapshot.phase == "streaming" then
 		return { status = "pending collection status" }
+	end
+	return nil
+end
+
+function Core.tag_marker_status_for(snapshot, path)
+	if not snapshot or snapshot.phase == "pending" or snapshot.phase == "streaming" then
+		return { status = "pending" }
+	end
+	if snapshot.phase == "unavailable" then
+		return { status = "unavailable", reason = snapshot.reason }
+	end
+	local result = snapshot.statuses and snapshot.statuses[path]
+	if result then
+		return result
 	end
 	return nil
 end

@@ -34,6 +34,37 @@ test("passes a complete library override to the full-library lookup", function()
 	})
 end)
 
+test("validates ordered tag markers and builds each query lookup", function()
+	local markers = assert(Core.validate_tag_markers({
+		tag_markers = {
+			{ label = "S", query = "onsync:true" },
+			{ label = "P", query = "portable:true" },
+		},
+	}))
+	assert(markers[1].label == "S")
+	assert(markers[2].query == "portable:true")
+	assert(#assert(Core.validate_tag_markers({ tag_markers = {} })) == 0)
+
+	local command = assert(Core.lookup_command({ library = "/data/library.db", directory = "/music" }, markers[1].query))
+	same(command.args, {
+		"-l", "/data/library.db", "-d", "/music", "list", "-p", "onsync:true",
+	})
+
+	for _, case in ipairs({
+		{ tag_markers = "onsync:true" },
+		{ tag_markers = { [1] = { label = "S", query = "onsync:true" }, [3] = { label = "P", query = "portable:true" } } },
+		{ tag_markers = { "onsync:true" } },
+		{ tag_markers = { { query = "onsync:true" } } },
+		{ tag_markers = { { label = " S", query = "onsync:true" } } },
+		{ tag_markers = { { label = "S", query = "onsync:true " } } },
+		{ tag_markers = { { label = "S", query = "onsync:true" }, { label = "S", query = "portable:true" } } },
+	}) do
+		local result, err = Core.validate_tag_markers(case)
+		assert(result == nil)
+		assert(err:find("tag_markers"), err)
+	end
+end)
+
 test("rejects partial and empty library overrides", function()
 	for _, options in ipairs({
 		{ library = "/data/library.db" },
@@ -200,6 +231,14 @@ test("scans all descendants and turns a scan failure into an error", function()
 	end)
 	assert(missing_tree == nil)
 	assert(err:find("permission denied"))
+end)
+
+test("formats tag marker glyphs and matching counts", function()
+	local glyphs = { all = "●", some = "◐", none = "○", ["not applicable"] = "—" }
+	for status, glyph in pairs(glyphs) do
+		assert(Core.tag_marker_glyph(status) == glyph)
+	end
+	assert(Core.tag_marker_card({ label = "S" }, { status = "some", candidates = 3, matching = 2 }) == "Tag marker S: Some (2/3 matching)")
 end)
 
 test("maps every collection status to its agreed marker", function()

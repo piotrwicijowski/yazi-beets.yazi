@@ -126,6 +126,11 @@ function M:reload(directory, force_refresh)
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. exclusion_error))
 		return
 	end
+	local markers, marker_error = Core.validate_tag_markers(options)
+	if not markers then
+		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. marker_error))
+		return
+	end
 
 	local command, configuration_error = Core.lookup_command(options)
 	if not command then
@@ -162,10 +167,15 @@ function M:reload(directory, force_refresh)
 	end
 
 	local statuses = {}
+	local tag_markers = {}
+	for _, marker in ipairs(markers) do
+		tag_markers[#tag_markers + 1] = { marker = marker, phase = "pending" }
+	end
 	if not finish_snapshot(generation, {
 		directory = directory,
 		phase = "streaming",
 		statuses = statuses,
+		tag_markers = tag_markers,
 		library = library_identity(),
 	}) then
 		return
@@ -227,6 +237,7 @@ function M:reload(directory, force_refresh)
 				return
 			end
 		end
+		root.children[#root.children + 1] = tree
 
 		local candidate_count = Core.candidate_count(tree, exclusions)
 		if candidate_count > 0 and not resolve_paths() then
@@ -247,10 +258,43 @@ function M:reload(directory, force_refresh)
 	end
 
 	statuses[directory] = Core.directory_result(candidates, collected)
+
+	local query_results = {}
+	for index, marker in ipairs(markers) do
+		local query_result = query_results[marker.query]
+		if not query_result then
+			local marker_command = assert(Core.lookup_command(options, marker.query))
+			local output, command_error = Command(marker_command.program):arg(marker_command.args):output()
+			if not output then
+				query_result = { reason = "could not start beet: " .. tostring(command_error) }
+			elseif not output.status.success then
+				query_result = { reason = string.format(
+					"beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or "")
+				) }
+			elseif type(output.stdout) ~= "string" then
+				query_result = { reason = "beet output could not be read" }
+			else
+				query_result = { paths = Core.collected_paths(output.stdout) }
+			end
+			query_results[marker.query] = query_result
+		end
+
+		if query_result.paths then
+			tag_markers[index] = {
+				marker = marker,
+				phase = "ready",
+				statuses = Core.match(root, query_result.paths, exclusions).statuses,
+			}
+		else
+			tag_markers[index] = { marker = marker, phase = "unavailable", reason = query_result.reason }
+		end
+	end
+
 	finish_snapshot(generation, {
 		directory = directory,
 		phase = "ready",
 		statuses = statuses,
+		tag_markers = tag_markers,
 		library = library_identity(),
 	})
 end
@@ -272,11 +316,17 @@ function M:setup(user_options)
 end
 
 function M:linemode(file)
-	local status = Core.status_for(snapshot_for(), tostring(file.url))
+	local snapshot = snapshot_for()
+	local status = Core.status_for(snapshot, tostring(file.url))
 	if file.cha and file.cha.is_symlink and (not status or status.status ~= "not applicable") then
 		return ""
 	end
-	return Core.marker(status and status.status)
+	local markers = { Core.marker(status and status.status) }
+	for _, marker_snapshot in ipairs((snapshot and snapshot.tag_markers) or {}) do
+		local marker_status = Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
+		markers[#markers + 1] = marker_snapshot.marker.label .. Core.tag_marker_glyph(marker_status and marker_status.status)
+	end
+	return table.concat(markers, " ")
 end
 
 function M:card(file)
@@ -285,7 +335,14 @@ function M:card(file)
 	if file.cha and file.cha.is_symlink and (not result or result.status ~= "not applicable") then
 		return "Collection status: Not applicable\nSymlinks are excluded from collection-membership evaluation."
 	end
-	return Core.card(tostring(file.url), result, (snapshot and snapshot.library) or library_identity())
+	local card = Core.card(tostring(file.url), result, (snapshot and snapshot.library) or library_identity())
+	for _, marker_snapshot in ipairs((snapshot and snapshot.tag_markers) or {}) do
+		card = card .. "\n" .. Core.tag_marker_card(
+			marker_snapshot.marker,
+			Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
+		)
+	end
+	return card
 end
 
 function M:peek(job)
