@@ -72,7 +72,7 @@ With an explicit `directory` override, the plugin does not scan or invoke `beet`
 
 `cache = true` enables an in-memory cache of each successful collection or tag-marker `beet` lookup when both `library` and `directory` are explicitly configured. The plugin checks the library database's modification time and size, plus its SQLite `-wal` sidecar when present, before reusing those results. A change starts fresh lookups. The active directory is still recursively scanned on every entry, so filesystem additions, removals, and renames are reflected immediately. On a cache hit, each scanned subtree derives its candidate count and collection statuses in one evaluation traversal.
 
-Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. Failed lookups are never cached. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs new collection and tag-marker lookups.
+Caching is unavailable with the default beets configuration because the plugin does not know the effective library database path; `cache = true` therefore leaves the usual fresh-lookup behavior in place. A successful tag toggle updates only its affected marker cache and keeps the collection path set; one delayed SQLite fingerprint transition after that known marker-only change is also accepted. Failed lookups are never cached. The cache is never persisted and is cleared when `setup()` is called again. A manual refresh always bypasses it and performs new collection and tag-marker lookups.
 
 ### Candidate exclusions
 
@@ -127,7 +127,7 @@ run = "plugin yazi-beets -- --toggle=S"
 desc = "Toggle onsync for this directory"
 ```
 
-The toggle recursively scans the active directory’s candidate files. If all candidates match `S`, it runs `beet modify` to remove `onsync` from every matching beets item; otherwise it sets `onsync=true` on every candidate that is a beets item. Candidate exclusions and symlinks are respected. A successful toggle forces a fresh snapshot so the markers immediately reflect the change. Beets may write the changed flexible attribute to files according to its own `modify` configuration.
+The toggle immediately changes only its target entries’ marker suffixes to `…`. It applies to every selected item; if nothing is selected, it applies to the hovered item. Selected or hovered directories are scanned recursively, while a file applies only to itself. If all resulting candidate files match `S`, it runs `beet modify` to remove `onsync` from every matching beets item; otherwise it sets `onsync=true` on every candidate that is a beets item. Candidate exclusions and symlinks are respected. A successful toggle refreshes only the affected tag-marker values for the active directory; collection status and its cache remain intact. A failed toggle refreshes the prior status rather than leaving the marker pending. Beets may write the changed flexible attribute to files according to its own `modify` configuration.
 
 ### Toggle diagnostics
 

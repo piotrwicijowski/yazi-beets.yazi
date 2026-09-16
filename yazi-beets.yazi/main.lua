@@ -17,8 +17,38 @@ local store_options = ya.sync(function(state, value)
 	state.options = value
 end)
 
+local configured_cache = ya.sync(function(state)
+	return state.lookup_cache
+end)
+
+local store_cache = ya.sync(function(state, value)
+	state.lookup_cache = value
+end)
+
 local current_directory = ya.sync(function()
 	return tostring(cx.active.current.cwd)
+end)
+
+local toggle_targets = ya.sync(function()
+	local targets = {}
+	for _, file in pairs(cx.active.selected or {}) do
+		local cha = file.cha or {}
+		targets[#targets + 1] = {
+			path = tostring(file.url),
+			kind = cha.is_symlink and "symlink" or (cha.is_dir and "directory" or "file"),
+		}
+	end
+	if #targets == 0 then
+		local file = cx.active.current.hovered
+		if file then
+			local cha = file.cha or {}
+			targets[1] = {
+				path = tostring(file.url),
+				kind = cha.is_symlink and "symlink" or (cha.is_dir and "directory" or "file"),
+			}
+		end
+	end
+	return targets
 end)
 
 local begin_snapshot = ya.sync(function(state, snapshot)
@@ -40,6 +70,54 @@ end)
 
 local snapshot_for = ya.sync(function(state)
 	return state.snapshot
+end)
+
+local mark_tag_marker_pending = ya.sync(function(state, directory, label, targets)
+	local snapshot = state.snapshot
+	if not snapshot or snapshot.directory ~= directory then
+		return false
+	end
+	for index, marker_snapshot in ipairs(snapshot.tag_markers or {}) do
+		if marker_snapshot.marker.label == label and marker_snapshot.phase == "ready" then
+			local statuses = {}
+			for path, result in pairs(marker_snapshot.statuses or {}) do
+				statuses[path] = result
+			end
+			for _, target in ipairs(targets) do
+				statuses[target.path] = { status = "pending" }
+			end
+			snapshot.tag_markers[index] = {
+				marker = marker_snapshot.marker,
+				phase = "ready",
+				statuses = statuses,
+			}
+			ui.render()
+			return true
+		end
+	end
+	return false
+end)
+
+local replace_tag_marker = ya.sync(function(state, directory, query, statuses)
+	local snapshot = state.snapshot
+	if not snapshot or snapshot.directory ~= directory then
+		return false
+	end
+	local replaced = false
+	for index, marker_snapshot in ipairs(snapshot.tag_markers or {}) do
+		if marker_snapshot.marker.query == query then
+			snapshot.tag_markers[index] = {
+				marker = marker_snapshot.marker,
+				phase = "ready",
+				statuses = statuses,
+			}
+			replaced = true
+		end
+	end
+	if replaced then
+		ui.render()
+	end
+	return replaced
 end)
 
 local publish_statuses = ya.sync(function(state, generation, statuses)
@@ -124,6 +202,15 @@ local function cached_paths(query, force_refresh)
 	if fingerprint and lookup_cache.fingerprint == fingerprint then
 		return lookup_cache.paths_by_query[query or false]
 	end
+	-- A tag toggle is known not to change collection membership, but SQLite's
+	-- database/WAL fingerprint can settle after the toggle command returns.
+	-- Accept one such delayed transition for the collection path set only.
+	if fingerprint and query == nil and lookup_cache.collection_cache_grace then
+		lookup_cache.fingerprint = fingerprint
+		lookup_cache.collection_cache_grace = nil
+		store_cache(lookup_cache)
+		return lookup_cache.paths_by_query[false]
+	end
 	return nil
 end
 
@@ -135,12 +222,15 @@ local function cache_paths(query, paths, fingerprint)
 		lookup_cache = { fingerprint = fingerprint, paths_by_query = {} }
 	end
 	lookup_cache.paths_by_query[query or false] = paths
+	store_cache(lookup_cache)
 end
 
 function M:reload(directory, force_refresh)
 	options = configured_options()
+	lookup_cache = configured_cache()
 	if force_refresh then
 		lookup_cache = nil
+		store_cache(nil)
 	end
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
@@ -472,9 +562,11 @@ local function run_toggle_command(stage, command)
 	return output
 end
 
-function M:toggle_marker(directory, label)
-	debug_toggle(string.format("requested label=%q directory=%q", tostring(label), directory))
+function M:toggle_marker(directory, label, targets)
+	targets = targets or {}
+	debug_toggle(string.format("requested label=%q directory=%q targets=%d", tostring(label), directory, #targets))
 	options = configured_options()
+	lookup_cache = configured_cache()
 	local markers, marker_error = Core.validate_tag_markers(options)
 	if not markers then
 		return nil, "invalid configuration: " .. marker_error
@@ -503,9 +595,20 @@ function M:toggle_marker(directory, label)
 		return nil, "directory is outside the configured music directory root"
 	end
 
-	local tree, scan_error = Core.scan(directory, read_directory)
-	if not tree then
-		return nil, "directory scan failed: " .. scan_error
+	if #targets == 0 then
+		return nil, "no hovered or selected item"
+	end
+	local tree = { path = directory, kind = "directory", children = {} }
+	for _, target in ipairs(targets) do
+		local target_tree = target
+		if target.kind == "directory" then
+			local scan_error
+			target_tree, scan_error = Core.scan(target.path, read_directory)
+			if not target_tree then
+				return nil, "directory scan failed: " .. scan_error
+			end
+		end
+		tree.children[#tree.children + 1] = target_tree
 	end
 	local paths = Core.candidate_paths(tree, exclusions)
 	debug_toggle("candidate files=" .. #paths)
@@ -513,6 +616,7 @@ function M:toggle_marker(directory, label)
 		return nil, "directory contains no candidate files"
 	end
 
+	local cache_fingerprint_before = options.cache == true and cache_fingerprint() or nil
 	local output, command_error = run_toggle_command("marker lookup", lookup_command)
 	if not output then
 		return nil, "could not start beet: " .. tostring(command_error)
@@ -551,8 +655,38 @@ function M:toggle_marker(directory, label)
 		end
 	end
 
-	debug_toggle("mutation succeeded; forcing snapshot refresh")
-	M:reload(directory, true)
+	local active_tree, active_scan_error = Core.scan(directory, read_directory)
+	if not active_tree then
+		return nil, "directory scan failed: " .. active_scan_error
+	end
+	local refreshed_output, refresh_error = run_toggle_command("marker refresh", lookup_command)
+	if not refreshed_output then
+		return nil, "could not start beet: " .. tostring(refresh_error)
+	end
+	if not refreshed_output.status.success then
+		return nil, string.format(
+			"beet exited with code %s: %s", tostring(refreshed_output.status.code), tostring(refreshed_output.stderr or "")
+		)
+	end
+	if type(refreshed_output.stdout) ~= "string" then
+		return nil, "beet output could not be read"
+	end
+	local refreshed_paths = Core.collected_paths(refreshed_output.stdout)
+	local refreshed_statuses = Core.match(active_tree, refreshed_paths, exclusions).statuses
+	if options.cache == true and lookup_cache and cache_fingerprint_before
+		and lookup_cache.fingerprint == cache_fingerprint_before then
+		local cache_fingerprint_after = cache_fingerprint()
+		if cache_fingerprint_after then
+			lookup_cache.fingerprint = cache_fingerprint_after
+			lookup_cache.paths_by_query[marker.query] = refreshed_paths
+			lookup_cache.collection_cache_grace = true
+			store_cache(lookup_cache)
+		end
+	end
+	if not replace_tag_marker(directory, marker.query, refreshed_statuses) then
+		return nil, "active directory changed before tag marker refresh"
+	end
+	debug_toggle("mutation succeeded; refreshed marker snapshot without collection reload")
 	return true
 end
 
@@ -571,8 +705,12 @@ function M.entry(self_or_job, maybe_job)
 		tostring(args and args[1])
 	))
 	if label then
-		local ok, reason = M:toggle_marker(current_directory(), label)
+		local directory = current_directory()
+		local targets = toggle_targets()
+		debug_toggle("marker pending=" .. tostring(mark_tag_marker_pending(directory, label, targets)))
+		local ok, reason = M:toggle_marker(directory, label, targets)
 		if not ok then
+			M:reload(directory, true)
 			report_toggle_error(reason)
 		end
 		return
@@ -584,6 +722,7 @@ function M:setup(user_options)
 	options = user_options or {}
 	store_options(options)
 	lookup_cache = nil
+	store_cache(nil)
 	ps.sub("cd", function()
 		local directory = current_directory()
 		ya.async(function()

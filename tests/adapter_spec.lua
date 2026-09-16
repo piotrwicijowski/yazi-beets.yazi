@@ -9,6 +9,7 @@ local debug_messages = {}
 local clock = 0
 local directory_reads = 0
 local subscriptions = {}
+local on_command_output
 local outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 	{ status = { success = false, code = 1 }, stdout = "", stderr = "database unavailable" },
@@ -50,15 +51,21 @@ _G.ui = {
 		renders = renders + 1
 		local snapshot = plugin_state.snapshot or {}
 		local statuses = snapshot.statuses or {}
-		local marker_phases = {}
+		local marker_phases, marker_statuses = {}, {}
 		for index, marker_snapshot in ipairs(snapshot.tag_markers or {}) do
 			marker_phases[index] = marker_snapshot.phase
+			local marker_results = marker_snapshot.statuses or {}
+			marker_statuses[index] = {
+				album = marker_results["/music/album"] and marker_results["/music/album"].status,
+				loose = marker_results["/music/loose.mp3"] and marker_results["/music/loose.mp3"].status,
+			}
 		end
 		render_history[#render_history + 1] = {
 			phase = snapshot.phase,
 			album = statuses["/music/album"] and statuses["/music/album"].status,
 			loose = statuses["/music/loose.mp3"] and statuses["/music/loose.mp3"].status,
 			marker_phases = marker_phases,
+			marker_statuses = marker_statuses,
 		}
 	end,
 }
@@ -87,7 +94,11 @@ _G.Command = function(program)
 		return self
 	end
 	function command:output()
-		return table.remove(outputs, 1)
+		local output = table.remove(outputs, 1)
+		if on_command_output then
+			on_command_output(self, output)
+		end
+		return output
 	end
 	commands[#commands + 1] = command
 	return command
@@ -464,36 +475,106 @@ assert(
 )
 assert(Plugin:linemode(file("/music/album/song.flac")) == "● S● P○", "the final snapshot retains every batched tag marker")
 
+_G.cx.active.selected = {
+	{ url = "/music/album", cha = { is_dir = true } },
+	{ url = "/music/loose.mp3", cha = {} },
+}
 outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 	{ status = { success = true }, stdout = "" },
-	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
-	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n/music/loose.mp3\n" },
 }
 Plugin:setup({ tag_markers = { { label = "S", field = "onsync" } } })
 local commands_before_setting_tag = #commands
 Plugin.entry({ args = { toggle = "S" } })
-assert(#commands == commands_before_setting_tag + 4, "a toggle checks the marker, mutates, then refreshes")
+assert(#commands == commands_before_setting_tag + 3, "a toggle refreshes only its marker after mutation")
 assert(
 	table.concat(commands[commands_before_setting_tag + 2].args, "|")
 		== "modify|-y|path:/music/album/song.flac|,|path:/music/loose.mp3|onsync=true",
 	"a partly tagged directory sets the field on every candidate"
 )
-
 outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n/music/loose.mp3\n" },
 	{ status = { success = true }, stdout = "" },
-	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
-	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "" },
 }
 local commands_before_removing_tag = #commands
 Plugin.entry({ args = { toggle = "S" } })
-assert(#commands == commands_before_removing_tag + 4, "an all-tagged directory also refreshes after mutation")
+assert(#commands == commands_before_removing_tag + 3, "an all-tagged target refreshes only its marker after mutation")
 assert(
 	table.concat(commands[commands_before_removing_tag + 2].args, "|")
 		== "modify|-y|path:/music/album/song.flac|,|path:/music/loose.mp3|onsync!",
 	"an all-tagged directory removes the field from every candidate"
 )
+
+_G.cx.active.selected = {}
+_G.cx.active.current.hovered = { url = "/music/loose.mp3", cha = {} }
+outputs = {
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+local commands_before_hovered_tag = #commands
+Plugin.entry({ args = { toggle = "S" } })
+assert(#commands == commands_before_hovered_tag + 3, "a hovered fallback refreshes only its marker after mutation")
+assert(
+	table.concat(commands[commands_before_hovered_tag + 2].args, "|")
+		== "modify|-y|path:/music/loose.mp3|onsync=true",
+	"without selection, a toggle mutates only the hovered candidate"
+)
+local saw_only_hovered_item_pending = false
+for _, snapshot in ipairs(render_history) do
+	local marker = snapshot.marker_statuses[1]
+	if snapshot.phase == "ready" and snapshot.marker_phases[1] == "ready"
+		and marker and marker.album == "none" and marker.loose == "pending" then
+		saw_only_hovered_item_pending = true
+	end
+end
+assert(saw_only_hovered_item_pending, "a toggle leaves non-target marker statuses unchanged")
+
+Plugin:setup({
+	cache = true,
+	library = "/data/library.db",
+	directory = "/music",
+	tag_markers = { { label = "S", field = "onsync" } },
+})
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+local commands_before_cached_toggle = #commands
+Plugin.entry()
+assert(#commands == commands_before_cached_toggle + 2, "a cached snapshot seeds collection and marker lookups")
+on_command_output = function(command)
+	if table.concat(command.args, "|"):find("|modify|") then
+		library_metadata["/data/library.db"].mtime = library_metadata["/data/library.db"].mtime + 1
+		on_command_output = nil
+	end
+end
+outputs = {
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+-- Functional invocations load a separate Lua module, so they must update the
+-- cache state later used by the setup-context directory-change callback.
+package.loaded.main = nil
+local TogglePlugin = require("main")
+TogglePlugin.entry({ args = { toggle = "S" } })
+local commands_before_cached_directory_change = #commands
+subscriptions.cd()
+assert(#commands == commands_before_cached_directory_change, "a toggle preserves the cached collection lookup")
+library_metadata["/data/library.db"].mtime = library_metadata["/data/library.db"].mtime + 1
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+subscriptions.cd()
+assert(
+	#commands == commands_before_cached_directory_change,
+	"a delayed post-toggle fingerprint change preserves the cached collection lookup"
+)
+
 local saw_toggle_command, saw_toggle_success = false, false
 for _, message in ipairs(debug_messages) do
 	saw_toggle_command = saw_toggle_command or message:find("%[DEBUG%-toggle%-7d21%] mutation batch=1%-2 start: beet modify") ~= nil
