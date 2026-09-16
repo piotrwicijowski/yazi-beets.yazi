@@ -562,9 +562,15 @@ local function run_toggle_command(stage, command)
 	return output
 end
 
-function M:toggle_marker(directory, label, targets)
+function M:toggle_marker(directory, label, targets, action)
 	targets = targets or {}
-	debug_toggle(string.format("requested label=%q directory=%q targets=%d", tostring(label), directory, #targets))
+	action = action or "toggle"
+	if action ~= "toggle" and action ~= "set" and action ~= "clear" then
+		return nil, "unknown marker action " .. tostring(action)
+	end
+	debug_toggle(string.format(
+		"requested action=%q label=%q directory=%q targets=%d", action, tostring(label), directory, #targets
+	))
 	options = configured_options()
 	lookup_cache = configured_cache()
 	local markers, marker_error = Core.validate_tag_markers(options)
@@ -617,26 +623,32 @@ function M:toggle_marker(directory, label, targets)
 	end
 
 	local cache_fingerprint_before = options.cache == true and cache_fingerprint() or nil
-	local output, command_error = run_toggle_command("marker lookup", lookup_command)
-	if not output then
-		return nil, "could not start beet: " .. tostring(command_error)
+	local enabled
+	if action == "toggle" then
+		local output, command_error = run_toggle_command("marker lookup", lookup_command)
+		if not output then
+			return nil, "could not start beet: " .. tostring(command_error)
+		end
+		if not output.status.success then
+			return nil, string.format("beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or ""))
+		end
+		if type(output.stdout) ~= "string" then
+			return nil, "beet output could not be read"
+		end
+		local status = Core.match(tree, Core.collected_paths(output.stdout), exclusions).statuses[directory]
+		enabled = status.status ~= "all"
+		debug_toggle(string.format(
+			"marker status=%s matching=%d/%d; action=%s",
+			status.status,
+			status.matching or 0,
+			status.candidates or 0,
+			enabled and "set true" or "remove field"
+		))
+	else
+		enabled = action == "set"
+		debug_toggle("unconditional action=" .. (enabled and "set true" or "remove field"))
 	end
-	if not output.status.success then
-		return nil, string.format("beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or ""))
-	end
-	if type(output.stdout) ~= "string" then
-		return nil, "beet output could not be read"
-	end
-
-	local status = Core.match(tree, Core.collected_paths(output.stdout), exclusions).statuses[directory]
-	local enabled = status.status ~= "all"
-	debug_toggle(string.format(
-		"marker status=%s matching=%d/%d; action=%s",
-		status.status,
-		status.matching or 0,
-		status.candidates or 0,
-		enabled and "set true" or "remove field"
-	))
+	local output, command_error
 	for first = 1, #paths, TOGGLE_PATHS_PER_COMMAND do
 		local batch = {}
 		for index = first, math.min(first + TOGGLE_PATHS_PER_COMMAND - 1, #paths) do
@@ -696,19 +708,49 @@ function M.entry(self_or_job, maybe_job)
 	-- only its job argument.
 	local job = maybe_job or self_or_job
 	local args = job and job.args
-	local label = args and args.toggle
+	local action, label
+	local conflict = false
+	local function select_action(name, candidate_label)
+		if candidate_label == nil then
+			return
+		end
+		if action then
+			conflict = true
+			return
+		end
+		action, label = name, candidate_label
+	end
+	select_action("toggle", args and args["toggle-marker"])
+	select_action("set", args and args["set-marker"])
+	select_action("clear", args and args["clear-marker"])
+
+	local positional = args and args[1]
+	if type(positional) == "string" then
+		local action_name, positional_label = positional:match("^([^=]+)=(.*)$")
+		local positional_actions = {
+			["toggle-marker"] = "toggle",
+			["set-marker"] = "set",
+			["clear-marker"] = "clear",
+		}
+		select_action(positional_actions[action_name], positional_label)
+	end
+	if conflict then
+		report_toggle_error("pass exactly one marker action")
+		return
+	end
 	debug_toggle(string.format(
-		"entry first=%s second=%s toggle=%s positional=%s",
+		"entry first=%s second=%s action=%s label=%s positional=%s",
 		tostring(self_or_job),
 		tostring(maybe_job),
+		tostring(action),
 		tostring(label),
 		tostring(args and args[1])
 	))
-	if label then
+	if action then
 		local directory = current_directory()
 		local targets = toggle_targets()
 		debug_toggle("marker pending=" .. tostring(mark_tag_marker_pending(directory, label, targets)))
-		local ok, reason = M:toggle_marker(directory, label, targets)
+		local ok, reason = M:toggle_marker(directory, label, targets, action)
 		if not ok then
 			M:reload(directory, true)
 			report_toggle_error(reason)

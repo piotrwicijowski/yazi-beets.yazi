@@ -486,7 +486,7 @@ outputs = {
 }
 Plugin:setup({ tag_markers = { { label = "S", field = "onsync" } } })
 local commands_before_setting_tag = #commands
-Plugin.entry({ args = { toggle = "S" } })
+Plugin.entry({ args = { "toggle-marker=S" } })
 assert(#commands == commands_before_setting_tag + 3, "a toggle refreshes only its marker after mutation")
 assert(
 	table.concat(commands[commands_before_setting_tag + 2].args, "|")
@@ -499,7 +499,7 @@ outputs = {
 	{ status = { success = true }, stdout = "" },
 }
 local commands_before_removing_tag = #commands
-Plugin.entry({ args = { toggle = "S" } })
+Plugin.entry({ args = { ["toggle-marker"] = "S" } })
 assert(#commands == commands_before_removing_tag + 3, "an all-tagged target refreshes only its marker after mutation")
 assert(
 	table.concat(commands[commands_before_removing_tag + 2].args, "|")
@@ -515,13 +515,40 @@ outputs = {
 	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
 }
 local commands_before_hovered_tag = #commands
-Plugin.entry({ args = { toggle = "S" } })
+Plugin.entry({ args = { ["toggle-marker"] = "S" } })
 assert(#commands == commands_before_hovered_tag + 3, "a hovered fallback refreshes only its marker after mutation")
 assert(
 	table.concat(commands[commands_before_hovered_tag + 2].args, "|")
 		== "modify|-y|path:/music/loose.mp3|onsync=true",
 	"without selection, a toggle mutates only the hovered candidate"
 )
+
+outputs = {
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "/music/loose.mp3\n" },
+}
+local commands_before_setting_marker = #commands
+Plugin.entry({ args = { "set-marker=S" } })
+assert(#commands == commands_before_setting_marker + 2, "set-marker mutates and refreshes without a marker lookup")
+assert(
+	table.concat(commands[commands_before_setting_marker + 1].args, "|")
+		== "modify|-y|path:/music/loose.mp3|onsync=true",
+	"set-marker always sets the flexible attribute"
+)
+
+outputs = {
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "" },
+}
+local commands_before_clearing_marker = #commands
+Plugin.entry({ args = { "clear-marker=S" } })
+assert(#commands == commands_before_clearing_marker + 2, "clear-marker mutates and refreshes without a marker lookup")
+assert(
+	table.concat(commands[commands_before_clearing_marker + 1].args, "|")
+		== "modify|-y|path:/music/loose.mp3|onsync!",
+	"clear-marker always removes the flexible attribute"
+)
+
 local saw_only_hovered_item_pending = false
 for _, snapshot in ipairs(render_history) do
 	local marker = snapshot.marker_statuses[1]
@@ -560,7 +587,7 @@ outputs = {
 -- cache state later used by the setup-context directory-change callback.
 package.loaded.main = nil
 local TogglePlugin = require("main")
-TogglePlugin.entry({ args = { toggle = "S" } })
+TogglePlugin.entry({ args = { ["toggle-marker"] = "S" } })
 local commands_before_cached_directory_change = #commands
 subscriptions.cd()
 assert(#commands == commands_before_cached_directory_change, "a toggle preserves the cached collection lookup")

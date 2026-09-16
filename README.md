@@ -118,20 +118,30 @@ A tag marker is a labelled beets flexible attribute displayed independently afte
 
 The linemode suffix grammar is a space-separated `label` plus glyph for every configured marker. For example, `● S● P○` means collection membership is collected, `S` matches every candidate, and `P` matches none. Tag glyphs are `●` (all candidates match), `◐` (some match), `○` (none match), `…` (lookup pending), `!` (lookup unavailable), and `—` (not applicable). They neither change collection membership nor affect candidate exclusions. After their lookups resolve, ready tag markers are evaluated in one tree traversal and their updates coalesce for up to 50 ms; a marker-query failure publishes immediately. A marker-query failure affects only that marker; its selected-entry card line includes the failure reason while collection status and other tag markers remain available.
 
-Bind a marker toggle with its label as a named argument. The `--` delimiter passes it through Yazi's `plugin` action (use `-- --toggle=<label>`):
+Bind one marker action with its label as a positional argument. The `--` delimiter passes it through Yazi's `plugin` action:
 
 ```toml
 [[manager.prepend_keymap]]
 on = "<C-s>"
-run = "plugin yazi-beets -- --toggle=S"
-desc = "Toggle onsync for this directory"
+run = "plugin yazi-beets -- toggle-marker=S"
+desc = "Toggle onsync"
+
+[[manager.prepend_keymap]]
+on = ["b", "s"]
+run = "plugin yazi-beets -- set-marker=S"
+desc = "Set onsync"
+
+[[manager.prepend_keymap]]
+on = ["b", "c"]
+run = "plugin yazi-beets -- clear-marker=S"
+desc = "Clear onsync"
 ```
 
-The toggle immediately changes only its target entries’ marker suffixes to `…`. It applies to every selected item; if nothing is selected, it applies to the hovered item. Selected or hovered directories are scanned recursively, while a file applies only to itself. If all resulting candidate files match `S`, it runs `beet modify` to remove `onsync` from every matching beets item; otherwise it sets `onsync=true` on every candidate that is a beets item. Candidate exclusions and symlinks are respected. A successful toggle refreshes only the affected tag-marker values for the active directory; collection status and its cache remain intact. A failed toggle refreshes the prior status rather than leaving the marker pending. Beets may write the changed flexible attribute to files according to its own `modify` configuration.
+`toggle-marker` clears the field when every target candidate already matches it; otherwise it sets the field. `set-marker` always sets it and `clear-marker` always removes it. Each action immediately changes only its target entries’ marker suffixes to `…`. It applies to every selected item; if nothing is selected, it applies to the hovered item. Selected or hovered directories are scanned recursively, while a file applies only to itself. Candidate exclusions and symlinks are respected. A successful action refreshes only the affected tag-marker values for the active directory; collection status and its cache remain intact. A failed action refreshes the prior status rather than leaving the marker pending. Beets may write the changed flexible attribute to files according to its own `modify` configuration.
 
 ### Toggle diagnostics
 
-Start Yazi with `YAZI_LOG=debug yazi`, run the toggle once, then inspect `~/.local/state/yazi/yazi.log` (or `$XDG_STATE_HOME/yazi/yazi.log`). Lines prefixed `[DEBUG-toggle-7d21]` show the received toggle argument, marker field/query, candidate count and aggregate status, every exact `beet` command, and the final refresh or failure. Please redact library paths before sharing the log.
+Start Yazi with `YAZI_LOG=debug yazi`, run the toggle once, then inspect `~/.local/state/yazi/yazi.log` (or `$XDG_STATE_HOME/yazi/yazi.log`). Lines prefixed `[DEBUG-toggle-7d21]` show the received marker action, field/query, candidate count and aggregate status when toggling, every exact `beet` command, and the final refresh or failure. Please redact library paths before sharing the log.
 
 Malformed tag-marker configuration does not run tag queries or change collection-membership evaluation. The linemode appends `tags!`, and the selected-entry card gives the validation reason.
 

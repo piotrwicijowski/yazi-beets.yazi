@@ -23,7 +23,8 @@ beets:setup({
 - [ ] A candidate with a returned `beet list -p` path shows collection `●`; an unmatched candidate shows collection `○`.
 - [ ] `S` and `P` reflect their separate flexible attributes. The album-level `onsync:true` attribute yields `S●` for its item, and the prepared directory displays a mixed marker (`S◐` or `P◐`) where appropriate.
 - [ ] Tag markers remain independent of collection membership: a collected candidate can show `S○`, and an uncollected candidate can show `P●`.
-- [ ] Use a `plugin yazi-beets -- --toggle=S` binding on a partly tagged directory. Every candidate that is a beets item gets `onsync=true`, then `S` refreshes to `●`.
+- [ ] Use a `plugin yazi-beets -- toggle-marker=S` binding on a partly tagged directory. Every candidate that is a beets item gets `onsync=true`, then `S` refreshes to `●`.
+- [ ] Use `set-marker=S` and `clear-marker=S` on the same target. They set and remove `onsync` unconditionally, without first checking its marker status.
 - [ ] Use the same binding again. The `onsync` flexible attribute is removed from every candidate that is a beets item, then `S` refreshes to `○`.
 - [ ] Change a fixture flexible attribute, then use the `plugin yazi-beets` refresh binding (for example `Ctrl-r`). The affected tag marker updates, proving refresh ran every configured tag query rather than reusing stale results.
 - [ ] Re-entering the directory and the refresh binding each issue a new lookup, without polling.
