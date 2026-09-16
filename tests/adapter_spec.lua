@@ -5,6 +5,7 @@ local plugin_state = {}
 local commands = {}
 local renders = 0
 local render_history = {}
+local debug_messages = {}
 local clock = 0
 local directory_reads = 0
 local subscriptions = {}
@@ -39,6 +40,9 @@ _G.ya = {
 	time = function()
 		clock = clock + 0.001
 		return clock
+	end,
+	dbg = function(message)
+		debug_messages[#debug_messages + 1] = message
 	end,
 }
 _G.ui = {
@@ -236,9 +240,9 @@ outputs = {
 }
 Plugin:setup({
 	tag_markers = {
-		{ label = "S", query = "onsync:true" },
-		{ label = "P", query = "portable:true" },
-		{ label = "Q", query = "onsync:true" },
+		{ label = "S", field = "onsync" },
+		{ label = "P", field = "portable" },
+		{ label = "Q", field = "onsync" },
 	},
 })
 _G.cx = { active = { current = { cwd = "/music" } } }
@@ -263,8 +267,8 @@ outputs = {
 }
 Plugin:setup({
 	tag_markers = {
-		{ label = "S", query = "broken:true" },
-		{ label = "P", query = "portable:true" },
+		{ label = "S", field = "broken" },
+		{ label = "P", field = "portable" },
 	},
 })
 local commands_before_failed_marker = #commands
@@ -288,7 +292,7 @@ outputs = {
 	{ status = { success = false, code = 1 }, stdout = "", stderr = "database unavailable" },
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 }
-Plugin:setup({ tag_markers = { { label = "S", query = "onsync:true" } } })
+Plugin:setup({ tag_markers = { { label = "S", field = "onsync" } } })
 local commands_before_failed_collection = #commands
 Plugin:entry()
 assert(#commands == commands_before_failed_collection + 2, "a failed collection lookup must not prevent tag queries")
@@ -300,8 +304,8 @@ Plugin:setup({
 	library = "/data/library.db",
 	directory = "/music",
 	tag_markers = {
-		{ label = "S", query = "onsync:true" },
-		{ label = "P", query = "portable:true" },
+		{ label = "S", field = "onsync" },
+		{ label = "P", field = "portable" },
 	},
 })
 _G.cx = { active = { current = { cwd = "/downloads" } } }
@@ -330,8 +334,8 @@ Plugin:setup({
 	library = "/data/library.db",
 	directory = "/music",
 	tag_markers = {
-		{ label = "S", query = "onsync:true" },
-		{ label = "P", query = "portable:true" },
+		{ label = "S", field = "onsync" },
+		{ label = "P", field = "portable" },
 	},
 })
 _G.cx = { active = { current = { cwd = "/music" } } }
@@ -353,8 +357,8 @@ Plugin:setup({
 	library = "/data/library.db",
 	directory = "/music",
 	tag_markers = {
-		{ label = "S", query = "onsync:true" },
-		{ label = "P", query = "portable:true" },
+		{ label = "S", field = "onsync" },
+		{ label = "P", field = "portable" },
 	},
 })
 local commands_before_failed_cached_marker = #commands
@@ -392,7 +396,7 @@ Plugin:setup({
 	cache = true,
 	library = "/data/library.db",
 	directory = "/music",
-	tag_markers = { { label = "Synced", query = "onsync:true" } },
+	tag_markers = { { label = "Synced", field = "onsync" } },
 })
 local commands_before_tag_cache_reconfiguration = #commands
 subscriptions.cd()
@@ -447,8 +451,8 @@ outputs = {
 }
 Plugin:setup({
 	tag_markers = {
-		{ label = "S", query = "onsync:true" },
-		{ label = "P", query = "portable:true" },
+		{ label = "S", field = "onsync" },
+		{ label = "P", field = "portable" },
 	},
 })
 _G.cx = { active = { current = { cwd = "/music" } } }
@@ -459,5 +463,43 @@ assert(
 	"fast tag-marker results publish together in one redraw"
 )
 assert(Plugin:linemode(file("/music/album/song.flac")) == "● S● P○", "the final snapshot retains every batched tag marker")
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+Plugin:setup({ tag_markers = { { label = "S", field = "onsync" } } })
+local commands_before_setting_tag = #commands
+Plugin.entry({ args = { toggle = "S" } })
+assert(#commands == commands_before_setting_tag + 4, "a toggle checks the marker, mutates, then refreshes")
+assert(
+	table.concat(commands[commands_before_setting_tag + 2].args, "|")
+		== "modify|-y|path:/music/album/song.flac|,|path:/music/loose.mp3|onsync=true",
+	"a partly tagged directory sets the field on every candidate"
+)
+
+outputs = {
+	{ status = { success = true }, stdout = "/music/album/song.flac\n/music/loose.mp3\n" },
+	{ status = { success = true }, stdout = "" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
+}
+local commands_before_removing_tag = #commands
+Plugin.entry({ args = { toggle = "S" } })
+assert(#commands == commands_before_removing_tag + 4, "an all-tagged directory also refreshes after mutation")
+assert(
+	table.concat(commands[commands_before_removing_tag + 2].args, "|")
+		== "modify|-y|path:/music/album/song.flac|,|path:/music/loose.mp3|onsync!",
+	"an all-tagged directory removes the field from every candidate"
+)
+local saw_toggle_command, saw_toggle_success = false, false
+for _, message in ipairs(debug_messages) do
+	saw_toggle_command = saw_toggle_command or message:find("%[DEBUG%-toggle%-7d21%] mutation batch=1%-2 start: beet modify") ~= nil
+	saw_toggle_success = saw_toggle_success or message:find("%[DEBUG%-toggle%-7d21%] mutation succeeded") ~= nil
+end
+assert(saw_toggle_command, "toggle diagnostics include the precise beets mutation command")
+assert(saw_toggle_success, "toggle diagnostics record a successful refresh")
 
 print("adapter tests passed")

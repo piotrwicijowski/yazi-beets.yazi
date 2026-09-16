@@ -6,6 +6,8 @@ local options = {}
 local lookup_cache
 local STATUS_PUBLISH_INTERVAL = 0.05
 local TAG_PUBLISH_INTERVAL = 0.05
+local TOGGLE_PATHS_PER_COMMAND = 100
+local TOGGLE_DEBUG_PREFIX = "[DEBUG-toggle-7d21] "
 
 local configured_options = ya.sync(function(state)
 	return state.options or {}
@@ -429,7 +431,152 @@ function M:reload(directory, force_refresh)
 	})
 end
 
-function M:entry()
+local function debug_toggle(message)
+	if ya.dbg then
+		ya.dbg(TOGGLE_DEBUG_PREFIX .. message)
+	end
+end
+
+local function command_description(command)
+	return command.program .. " " .. table.concat(command.args, " ")
+end
+
+local function report_toggle_error(reason)
+	debug_toggle("failed: " .. reason)
+	if ya.err then
+		ya.err("yazi-beets: " .. reason)
+	end
+end
+
+local function run_toggle_command(stage, command)
+	debug_toggle(stage .. " start: " .. command_description(command))
+	local ok, output, command_error = pcall(function()
+		return Command(command.program):arg(command.args):output()
+	end)
+	if not ok then
+		return nil, "Yazi Command exception: " .. tostring(output)
+	end
+	if not output then
+		debug_toggle(stage .. " finished without output: " .. tostring(command_error))
+		return nil, command_error
+	end
+	local status = output.status or {}
+	debug_toggle(string.format(
+		"%s finished: success=%s code=%s stdout_bytes=%s stderr=%s",
+		stage,
+		tostring(status.success),
+		tostring(status.code),
+		type(output.stdout) == "string" and #output.stdout or tostring(type(output.stdout)),
+		tostring(output.stderr or "")
+	))
+	return output
+end
+
+function M:toggle_marker(directory, label)
+	debug_toggle(string.format("requested label=%q directory=%q", tostring(label), directory))
+	options = configured_options()
+	local markers, marker_error = Core.validate_tag_markers(options)
+	if not markers then
+		return nil, "invalid configuration: " .. marker_error
+	end
+	local marker
+	for _, candidate in ipairs(markers) do
+		if candidate.label == label then
+			marker = candidate
+			break
+		end
+	end
+	if not marker then
+		return nil, "unknown tag marker " .. tostring(label)
+	end
+	debug_toggle(string.format("marker label=%q field=%q query=%q", marker.label, marker.field, marker.query))
+
+	local exclusions, exclusion_error = Core.validate_exclusions(options)
+	if not exclusions then
+		return nil, "invalid configuration: " .. exclusion_error
+	end
+	local lookup_command, configuration_error = Core.lookup_command(options, marker.query)
+	if not lookup_command then
+		return nil, "invalid configuration: " .. configuration_error
+	end
+	if options.directory and not Core.is_within_root(directory, options.directory) then
+		return nil, "directory is outside the configured music directory root"
+	end
+
+	local tree, scan_error = Core.scan(directory, read_directory)
+	if not tree then
+		return nil, "directory scan failed: " .. scan_error
+	end
+	local paths = Core.candidate_paths(tree, exclusions)
+	debug_toggle("candidate files=" .. #paths)
+	if #paths == 0 then
+		return nil, "directory contains no candidate files"
+	end
+
+	local output, command_error = run_toggle_command("marker lookup", lookup_command)
+	if not output then
+		return nil, "could not start beet: " .. tostring(command_error)
+	end
+	if not output.status.success then
+		return nil, string.format("beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or ""))
+	end
+	if type(output.stdout) ~= "string" then
+		return nil, "beet output could not be read"
+	end
+
+	local status = Core.match(tree, Core.collected_paths(output.stdout), exclusions).statuses[directory]
+	local enabled = status.status ~= "all"
+	debug_toggle(string.format(
+		"marker status=%s matching=%d/%d; action=%s",
+		status.status,
+		status.matching or 0,
+		status.candidates or 0,
+		enabled and "set true" or "remove field"
+	))
+	for first = 1, #paths, TOGGLE_PATHS_PER_COMMAND do
+		local batch = {}
+		for index = first, math.min(first + TOGGLE_PATHS_PER_COMMAND - 1, #paths) do
+			batch[#batch + 1] = paths[index]
+		end
+		local mutation_command = assert(Core.toggle_command(options, batch, marker.field, enabled))
+		output, command_error = run_toggle_command(
+			string.format("mutation batch=%d-%d", first, first + #batch - 1),
+			mutation_command
+		)
+		if not output then
+			return nil, "could not start beet: " .. tostring(command_error)
+		end
+		if not output.status.success then
+			return nil, string.format("beet exited with code %s: %s", tostring(output.status.code), tostring(output.stderr or ""))
+		end
+	end
+
+	debug_toggle("mutation succeeded; forcing snapshot refresh")
+	M:reload(directory, true)
+	return true
+end
+
+function M.entry(self_or_job, maybe_job)
+	-- Yazi passes (self, job) in supported releases.  Accept a direct job as
+	-- well: older runners and test harnesses may call a functional entry with
+	-- only its job argument.
+	local job = maybe_job or self_or_job
+	local args = job and job.args
+	local label = args and args.toggle
+	debug_toggle(string.format(
+		"entry first=%s second=%s toggle=%s positional=%s",
+		tostring(self_or_job),
+		tostring(maybe_job),
+		tostring(label),
+		tostring(args and args[1])
+	))
+	if label then
+		local ok, reason = M:toggle_marker(current_directory(), label)
+		if not ok then
+			report_toggle_error(reason)
+		end
+		return
+	end
 	M:reload(current_directory(), true)
 end
 

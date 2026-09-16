@@ -1,6 +1,6 @@
 # yazi-beets
 
-A read-only [Yazi](https://yazi-rs.github.io/) plugin that shows whether a path has **collection membership** in a local [beets](https://beets.io/) library. A beets item is authoritative: neither a filename extension nor being beneath the music root proves membership.
+A [Yazi](https://yazi-rs.github.io/) plugin that shows whether a path has **collection membership** in a local [beets](https://beets.io/) library. A beets item is authoritative: neither a filename extension nor being beneath the music root proves membership. It is read-only except when an explicitly bound tag-marker toggle updates a configured flexible attribute.
 
 ## Support
 
@@ -36,10 +36,11 @@ beets:setup({
   -- ignore_extensions = { "jpg", "png" },
   -- ignore_subdirectories = { "Artwork", "Downloads" },
 
-  -- Optional labelled beets item queries, displayed after collection status.
+  -- Optional labelled flexible attributes, displayed after collection status.
+  -- Each marker matches <field>:true and can be toggled recursively.
   -- tag_markers = {
-  --   { label = "S", query = "onsync:true" },
-  --   { label = "P", query = "portable:true" },
+  --   { label = "S", field = "onsync" },
+  --   { label = "P", field = "portable" },
   -- },
 })
 
@@ -113,9 +114,24 @@ A **candidate file** is any non-directory, non-symlink entry not removed by a ca
 
 ### Tag markers
 
-A tag marker is a labelled beets item query displayed independently after the collection marker. `tag_markers` is a dense Lua array: every entry must have distinct nonblank, unpadded string `label` and `query` fields. Entries render in array order. The query is passed unchanged as one `beet list -p <query>` argument, so it accepts any beets item-query grammar; `onsync:true` and `portable:true` query flexible attributes.
+A tag marker is a labelled beets flexible attribute displayed independently after the collection marker. `tag_markers` is a dense Lua array: every entry must have distinct nonblank, unpadded string `label` and a `field` name containing letters, digits, and underscores (and beginning with a letter or underscore). Entries render in array order. Each marker queries `<field>:true`, so `field = "onsync"` and `field = "portable"` query the corresponding flexible attributes.
 
 The linemode suffix grammar is a space-separated `label` plus glyph for every configured marker. For example, `● S● P○` means collection membership is collected, `S` matches every candidate, and `P` matches none. Tag glyphs are `●` (all candidates match), `◐` (some match), `○` (none match), `…` (lookup pending), `!` (lookup unavailable), and `—` (not applicable). They neither change collection membership nor affect candidate exclusions. After their lookups resolve, ready tag markers are evaluated in one tree traversal and their updates coalesce for up to 50 ms; a marker-query failure publishes immediately. A marker-query failure affects only that marker; its selected-entry card line includes the failure reason while collection status and other tag markers remain available.
+
+Bind a marker toggle with its label as a named argument. The `--` delimiter passes it through Yazi's `plugin` action (use `-- --toggle=<label>`):
+
+```toml
+[[manager.prepend_keymap]]
+on = "<C-s>"
+run = "plugin yazi-beets -- --toggle=S"
+desc = "Toggle onsync for this directory"
+```
+
+The toggle recursively scans the active directory’s candidate files. If all candidates match `S`, it runs `beet modify` to remove `onsync` from every matching beets item; otherwise it sets `onsync=true` on every candidate that is a beets item. Candidate exclusions and symlinks are respected. A successful toggle forces a fresh snapshot so the markers immediately reflect the change. Beets may write the changed flexible attribute to files according to its own `modify` configuration.
+
+### Toggle diagnostics
+
+Start Yazi with `YAZI_LOG=debug yazi`, run the toggle once, then inspect `~/.local/state/yazi/yazi.log` (or `$XDG_STATE_HOME/yazi/yazi.log`). Lines prefixed `[DEBUG-toggle-7d21]` show the received toggle argument, marker field/query, candidate count and aggregate status, every exact `beet` command, and the final refresh or failure. Please redact library paths before sharing the log.
 
 Malformed tag-marker configuration does not run tag queries or change collection-membership evaluation. The linemode appends `tags!`, and the selected-entry card gives the validation reason.
 

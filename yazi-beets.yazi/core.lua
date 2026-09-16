@@ -1,22 +1,52 @@
 local Core = {}
 
-function Core.lookup_command(options, query)
+local function command_prefix(options)
 	options = options or {}
 
 	local library = options.library
 	local music_directory = options.directory
-	local args
 	if library == nil and music_directory == nil then
-		args = { "list", "-p" }
-	elseif type(library) ~= "string" or library == "" or type(music_directory) ~= "string" or music_directory == "" then
-		return nil, "Set both non-empty library and directory paths, or neither."
-	else
-		args = { "-l", library, "-d", music_directory, "list", "-p" }
+		return {}
 	end
+	if type(library) ~= "string" or library == "" or type(music_directory) ~= "string" or music_directory == "" then
+		return nil, "Set both non-empty library and directory paths, or neither."
+	end
+	return { "-l", library, "-d", music_directory }
+end
 
+function Core.lookup_command(options, query)
+	local args, err = command_prefix(options)
+	if not args then
+		return nil, err
+	end
+	args[#args + 1] = "list"
+	args[#args + 1] = "-p"
 	if query ~= nil then
 		args[#args + 1] = query
 	end
+	return { program = "beet", args = args }, nil
+end
+
+function Core.toggle_command(options, paths, field, enabled)
+	if type(paths) ~= "table" or #paths == 0 then
+		return nil, "no candidate files"
+	end
+	local args, err = command_prefix(options)
+	if not args then
+		return nil, err
+	end
+	args[#args + 1] = "modify"
+	args[#args + 1] = "-y"
+	for index, path in ipairs(paths) do
+		if type(path) ~= "string" or path == "" then
+			return nil, "candidate path must be a nonblank string"
+		end
+		if index > 1 then
+			args[#args + 1] = ","
+		end
+		args[#args + 1] = "path:" .. path
+	end
+	args[#args + 1] = field .. (enabled and "=true" or "!")
 	return { program = "beet", args = args }, nil
 end
 
@@ -85,17 +115,19 @@ function Core.validate_tag_markers(options)
 		if type(marker) ~= "table" then
 			return nil, string.format("tag_markers[%d] must be a table", index)
 		end
-		for _, field in ipairs({ "label", "query" }) do
-			local value = marker[field]
-			if type(value) ~= "string" or value == "" or value:match("^%s") or value:match("%s$") then
-				return nil, string.format("tag_markers[%d].%s must be a nonblank, unpadded string", index, field)
-			end
+		local label = marker.label
+		if type(label) ~= "string" or label == "" or label:match("^%s") or label:match("%s$") then
+			return nil, string.format("tag_markers[%d].label must be a nonblank, unpadded string", index)
 		end
-		if labels[marker.label] then
-			return nil, string.format("tag_markers[%d].label duplicates %q", index, marker.label)
+		local field = marker.field
+		if type(field) ~= "string" or not field:match("^[A-Za-z_][A-Za-z0-9_]*$") then
+			return nil, string.format("tag_markers[%d].field must be a beets field name", index)
 		end
-		labels[marker.label] = true
-		normalized[#normalized + 1] = { label = marker.label, query = marker.query }
+		if labels[label] then
+			return nil, string.format("tag_markers[%d].label duplicates %q", index, label)
+		end
+		labels[label] = true
+		normalized[#normalized + 1] = { label = label, field = field, query = field .. ":true" }
 	end
 	return normalized
 end
@@ -447,9 +479,30 @@ function Core.match(tree, matching_paths, exclusions)
 	return Core.match_all(tree, { matching_paths or {} }, exclusions)[1] or { statuses = {} }
 end
 
+function Core.candidate_paths(tree, exclusions)
+	exclusions = exclusions or { ignore_extensions = {}, ignore_subdirectories = {} }
+	local paths = {}
+	local function visit(node)
+		if node.kind == "symlink" then
+			return
+		end
+		if node.kind == "directory" then
+			if is_excluded_directory(node, exclusions) then
+				return
+			end
+			for _, child in ipairs(node.children or {}) do
+				visit(child)
+			end
+		elseif node.kind == "file" and not is_excluded_file(node, exclusions) then
+			paths[#paths + 1] = node.path
+		end
+	end
+	visit(tree)
+	return paths
+end
+
 function Core.candidate_count(tree, exclusions)
-	local result = Core.match(tree, {}, exclusions).statuses[tree.path]
-	return result and result.candidates or 0
+	return #Core.candidate_paths(tree, exclusions)
 end
 
 function Core.directory_result(candidates, collected)

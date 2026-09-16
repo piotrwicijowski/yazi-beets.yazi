@@ -34,14 +34,15 @@ test("passes a complete library override to the full-library lookup", function()
 	})
 end)
 
-test("validates ordered tag markers and builds each query lookup", function()
+test("validates ordered tag-marker fields and builds their true queries", function()
 	local markers = assert(Core.validate_tag_markers({
 		tag_markers = {
-			{ label = "S", query = "onsync:true" },
-			{ label = "P", query = "portable:true" },
+			{ label = "S", field = "onsync" },
+			{ label = "P", field = "portable" },
 		},
 	}))
 	assert(markers[1].label == "S")
+	assert(markers[1].field == "onsync")
 	assert(markers[2].query == "portable:true")
 	assert(#assert(Core.validate_tag_markers({ tag_markers = {} })) == 0)
 
@@ -51,18 +52,34 @@ test("validates ordered tag markers and builds each query lookup", function()
 	})
 
 	for _, case in ipairs({
-		{ tag_markers = "onsync:true" },
-		{ tag_markers = { [1] = { label = "S", query = "onsync:true" }, [3] = { label = "P", query = "portable:true" } } },
-		{ tag_markers = { "onsync:true" } },
-		{ tag_markers = { { query = "onsync:true" } } },
-		{ tag_markers = { { label = " S", query = "onsync:true" } } },
-		{ tag_markers = { { label = "S", query = "onsync:true " } } },
-		{ tag_markers = { { label = "S", query = "onsync:true" }, { label = "S", query = "portable:true" } } },
+		{ tag_markers = "onsync" },
+		{ tag_markers = { [1] = { label = "S", field = "onsync" }, [3] = { label = "P", field = "portable" } } },
+		{ tag_markers = { "onsync" } },
+		{ tag_markers = { { label = "S" } } },
+		{ tag_markers = { { label = " S", field = "onsync" } } },
+		{ tag_markers = { { label = "S", field = "on sync" } } },
+		{ tag_markers = { { label = "S", field = "onsync" }, { label = "S", field = "portable" } } },
 	}) do
 		local result, err = Core.validate_tag_markers(case)
 		assert(result == nil)
 		assert(err:find("tag_markers"), err)
 	end
+end)
+
+test("builds a noninteractive recursive tag-toggle mutation", function()
+	local command = assert(Core.toggle_command(
+		{ library = "/data/library.db", directory = "/music" },
+		{ "/music/one.flac", "/music/album/two.ogg" },
+		"onsync",
+		true
+	))
+	same(command.args, {
+		"-l", "/data/library.db", "-d", "/music", "modify", "-y",
+		"path:/music/one.flac", ",", "path:/music/album/two.ogg", "onsync=true",
+	})
+	local removal = assert(Core.toggle_command({}, { "/music/one.flac" }, "onsync", false))
+	same(removal.args, { "modify", "-y", "path:/music/one.flac", "onsync!" })
+	assert(Core.toggle_command({}, {}, "onsync", true) == nil)
 end)
 
 test("rejects partial and empty library overrides", function()
@@ -219,6 +236,7 @@ test("excludes configured extensions and directory subtrees", function()
 	}))
 	local evaluation = Core.evaluate(tree, { ["/music/album/song.flac"] = true }, exclusions)
 
+	same(Core.candidate_paths(tree, exclusions), { "/music/album/song.flac" })
 	assert(Core.candidate_count(tree, exclusions) == 1)
 	assert(evaluation.statuses["/music/cover.JPG"].status == "not applicable")
 	assert(evaluation.statuses["/music/cover.JPG"].reason == "excluded by configuration")

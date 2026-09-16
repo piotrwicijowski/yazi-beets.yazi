@@ -11,8 +11,8 @@ Configure the plugin with both markers:
 ```lua
 beets:setup({
   tag_markers = {
-    { label = "S", query = "onsync:true" },
-    { label = "P", query = "portable:true" },
+    { label = "S", field = "onsync" },
+    { label = "P", field = "portable" },
   },
 })
 ```
@@ -23,7 +23,8 @@ beets:setup({
 - [ ] A candidate with a returned `beet list -p` path shows collection `●`; an unmatched candidate shows collection `○`.
 - [ ] `S` and `P` reflect their separate flexible attributes. The album-level `onsync:true` attribute yields `S●` for its item, and the prepared directory displays a mixed marker (`S◐` or `P◐`) where appropriate.
 - [ ] Tag markers remain independent of collection membership: a collected candidate can show `S○`, and an uncollected candidate can show `P●`.
-- [ ] Temporarily configure one invalid marker query while retaining a valid marker. Only the invalid marker shows `!` and its selected-entry-card line explains the failure; collection status and the valid marker remain truthful.
+- [ ] Use a `plugin yazi-beets -- --toggle=S` binding on a partly tagged directory. Every candidate that is a beets item gets `onsync=true`, then `S` refreshes to `●`.
+- [ ] Use the same binding again. The `onsync` flexible attribute is removed from every candidate that is a beets item, then `S` refreshes to `○`.
 - [ ] Change a fixture flexible attribute, then use the `plugin yazi-beets` refresh binding (for example `Ctrl-r`). The affected tag marker updates, proving refresh ran every configured tag query rather than reusing stale results.
 - [ ] Re-entering the directory and the refresh binding each issue a new lookup, without polling.
 - [ ] Default beets configuration works; a complete `library`/`directory` pair works; partial configuration displays `!`.
