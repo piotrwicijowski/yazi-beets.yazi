@@ -5,6 +5,14 @@ local M = {}
 local options = {}
 local lookup_cache
 
+local configured_options = ya.sync(function(state)
+	return state.options or {}
+end)
+
+local store_options = ya.sync(function(state, value)
+	state.options = value
+end)
+
 local current_directory = ya.sync(function()
 	return tostring(cx.active.current.cwd)
 end)
@@ -105,6 +113,7 @@ local function cached_paths(force_refresh)
 end
 
 function M:reload(directory, force_refresh)
+	options = configured_options()
 	local pending = { directory = directory, phase = "pending", library = library_identity() }
 	local generation = begin_snapshot(pending)
 	local cache_enabled, cache_error = Core.cache_enabled(options)
@@ -252,6 +261,7 @@ end
 
 function M:setup(user_options)
 	options = user_options or {}
+	store_options(options)
 	lookup_cache = nil
 	ps.sub("cd", function()
 		local directory = current_directory()

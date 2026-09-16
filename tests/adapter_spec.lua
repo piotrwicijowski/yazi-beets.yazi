@@ -191,4 +191,23 @@ library_metadata["/data/library.db-wal"] = { mtime = 102, len = 128 }
 subscriptions.cd()
 assert(#commands == 6, "creating a SQLite WAL sidecar invalidates the cached lookup")
 
+-- Functional plugin invocations use a separate Lua context.  Configuration
+-- established during setup must remain available when that context refreshes.
+Plugin:setup({
+	ignore_extensions = { "mp3" },
+	ignore_subdirectories = { "album" },
+})
+Plugin:entry()
+assert(Plugin:linemode(file("/music/loose.mp3")) == "—", "setup context applies exclusions")
+
+outputs = { { status = { success = true }, stdout = "/music/album/song.flac\n" } }
+package.loaded.main = nil
+package.loaded.core = nil
+local RefreshPlugin = require("main")
+RefreshPlugin:entry()
+assert(
+	RefreshPlugin:linemode(file("/music/loose.mp3")) == "—",
+	"a functional refresh preserves configured exclusions"
+)
+
 print("adapter tests passed")
