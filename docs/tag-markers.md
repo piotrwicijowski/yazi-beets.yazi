@@ -13,7 +13,7 @@ beets:setup({
 
 Each marker queries `<field>:true`. `label` values must be distinct, nonblank, unpadded strings. `field` must begin with a letter or underscore and contain only letters, digits, and underscores. Markers render in configuration order.
 
-A marker suffix is its label plus one glyph: `●` all candidates match, `◐` some match, `○` none match, `…` pending, `!` unavailable, or `—` not applicable. Marker status does not alter collection membership or exclusion behavior. A marker-query failure affects only that marker.
+A marker suffix is its label plus one glyph: `●` all candidates match, `◐` some match, `○` none match, `…` pending, `!` unavailable, or `—` not applicable. [`collection_status_symbols`](configuration.md#collection-status-symbols) customizes these glyphs too, using the matching `all`, `some`, `none`, `pending`, `unavailable`, and `not_applicable` keys. Marker status does not alter collection membership or exclusion behavior. A marker-query failure affects only that marker.
 
 ## Mutating actions
 

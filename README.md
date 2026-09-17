@@ -58,7 +58,7 @@ desc = "Refresh beets collection status"
 | `!` | unavailable; inspect configuration or beets output |
 | `—` | not applicable; excluded or has no candidate descendants |
 
-Symlinks are not evaluated. Pending and unavailable status are never evidence that a path is uncollected. The status symbols can be overridden with the `collection_status_symbols` setting.
+Symlinks are not evaluated. Pending and unavailable status are never evidence that a path is uncollected. `collection_status_symbols` overrides collection-status and tag-marker symbols.
 
 ## Documentation
 

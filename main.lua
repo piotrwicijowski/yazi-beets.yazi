@@ -794,7 +794,8 @@ function M:linemode(file)
 	local markers = { Core.marker(status and status.status, collection_status_symbols) }
 	for _, marker_snapshot in ipairs((snapshot and snapshot.tag_markers) or {}) do
 		local marker_status = Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
-		markers[#markers + 1] = marker_snapshot.marker.label .. Core.tag_marker_glyph(marker_status and marker_status.status)
+		markers[#markers + 1] = marker_snapshot.marker.label
+			.. Core.tag_marker_glyph(marker_status and marker_status.status, collection_status_symbols)
 	end
 	if snapshot and snapshot.tag_marker_configuration_error then
 		markers[#markers + 1] = "tags!"

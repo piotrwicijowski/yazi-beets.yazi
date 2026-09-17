@@ -12,9 +12,9 @@ beets:setup({
   -- ignore_extensions = { "jpg", "png" },
   -- ignore_subdirectories = { "Artwork", "Downloads" },
   -- collection_status_symbols = {
-  --   collected = "●",
-  --   mixed = "◐",
-  --   uncollected = "○",
+  --   all = "●",
+  --   some = "◐",
+  --   none = "○",
   --   pending = "…",
   --   unavailable = "!",
   --   not_applicable = "—",
@@ -57,4 +57,4 @@ For `tag_markers`, see [Tag markers and actions](tag-markers.md).
 
 ## Collection-status symbols
 
-`collection_status_symbols` optionally overrides the linemode symbol for one or more collection statuses. Omitted statuses retain their defaults. Its supported keys are `collected`, `mixed`, `uncollected`, `pending`, `unavailable`, and `not_applicable`; each value must be a nonempty string. Tag-marker symbols are configured independently and are unchanged by this option.
+`collection_status_symbols` optionally overrides the linemode symbol for one or more status outcomes. Omitted statuses retain their defaults. Its supported keys are `all`, `some`, `none`, `pending`, `unavailable`, and `not_applicable`; each value must be a nonempty string. The same symbols apply to collection status and tag-marker glyphs: collection `collected`, `mixed`, and `uncollected` map to `all`, `some`, and `none`, respectively.

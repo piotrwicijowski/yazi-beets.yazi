@@ -119,7 +119,7 @@ test("validates collection-status symbol overrides while retaining defaults", fu
 
 	local symbols = assert(Core.validate_collection_status_symbols({
 		collection_status_symbols = {
-			collected = "C",
+			all = "C",
 			pending = "?",
 			not_applicable = "-",
 		},
@@ -131,8 +131,8 @@ test("validates collection-status symbol overrides while retaining defaults", fu
 
 	for _, case in ipairs({
 		{ options = { collection_status_symbols = "C" }, expected = "must be a table" },
-		{ options = { collection_status_symbols = { unknown = "?" } }, expected = "not a supported status" },
-		{ options = { collection_status_symbols = { collected = "" } }, expected = "must be a nonempty string" },
+		{ options = { collection_status_symbols = { collected = "?" } }, expected = "not a supported status" },
+		{ options = { collection_status_symbols = { all = "" } }, expected = "must be a nonempty string" },
 	}) do
 		local result, err = Core.validate_collection_status_symbols(case.options)
 		assert(result == nil)
@@ -300,11 +300,27 @@ test("scans all descendants and turns a scan failure into an error", function()
 	assert(err:find("permission denied"))
 end)
 
-test("formats tag marker glyphs and matching counts", function()
+test("formats tag marker glyphs with collection-status symbols", function()
 	local glyphs = { all = "●", some = "◐", none = "○", ["not applicable"] = "—" }
 	for status, glyph in pairs(glyphs) do
 		assert(Core.tag_marker_glyph(status) == glyph)
 	end
+	local symbols = assert(Core.validate_collection_status_symbols({
+		collection_status_symbols = {
+			all = "C",
+			some = "M",
+			none = "U",
+			unavailable = "X",
+			pending = "P",
+			not_applicable = "N",
+		},
+	}))
+	assert(Core.tag_marker_glyph("all", symbols) == "C")
+	assert(Core.tag_marker_glyph("some", symbols) == "M")
+	assert(Core.tag_marker_glyph("none", symbols) == "U")
+	assert(Core.tag_marker_glyph("unavailable", symbols) == "X")
+	assert(Core.tag_marker_glyph("pending", symbols) == "P")
+	assert(Core.tag_marker_glyph("not applicable", symbols) == "N")
 	assert(Core.tag_marker_card({ label = "S" }, { status = "some", candidates = 3, matching = 2 }) == "Tag marker S: Some (2/3 matching)")
 end)
 

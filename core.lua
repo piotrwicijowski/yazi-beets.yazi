@@ -205,9 +205,9 @@ local DEFAULT_COLLECTION_STATUS_SYMBOLS = {
 }
 
 local COLLECTION_STATUS_SYMBOL_KEYS = {
-	collected = "collected",
-	mixed = "mixed",
-	uncollected = "uncollected",
+	all = "collected",
+	some = "mixed",
+	none = "uncollected",
 	unavailable = "unavailable",
 	pending = "pending collection status",
 	not_applicable = "not applicable",
@@ -263,13 +263,13 @@ function Core.marker(status, symbols)
 	return (symbols or DEFAULT_COLLECTION_STATUS_SYMBOLS)[status] or ""
 end
 
-local TAG_MARKERS = {
-	all = "●",
-	some = "◐",
-	none = "○",
-	unavailable = "!",
-	pending = "…",
-	["not applicable"] = "—",
+local TAG_MARKER_COLLECTION_STATUSES = {
+	all = "collected",
+	some = "mixed",
+	none = "uncollected",
+	unavailable = "unavailable",
+	pending = "pending collection status",
+	["not applicable"] = "not applicable",
 }
 
 local TAG_TITLES = {
@@ -281,8 +281,8 @@ local TAG_TITLES = {
 	["not applicable"] = "Not applicable",
 }
 
-function Core.tag_marker_glyph(status)
-	return TAG_MARKERS[status] or ""
+function Core.tag_marker_glyph(status, symbols)
+	return Core.marker(TAG_MARKER_COLLECTION_STATUSES[status], symbols)
 end
 
 function Core.tag_marker_card(marker, result)
