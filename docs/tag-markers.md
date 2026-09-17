@@ -1,6 +1,6 @@
 # Tag markers and actions
 
-A tag marker is a labelled beets flexible attribute displayed independently after the collection marker. Configure markers in `init.lua`:
+A tag marker is a labelled beets flexible attribute displayed independently after the collection marker. Most useful for determinig the status of [alternatives](https://github.com/geigerzaehler/beets-alternatives) custom tags. Configure markers in `init.lua` during plugin `setup`:
 
 ```lua
 beets:setup({
@@ -41,7 +41,3 @@ desc = "Clear onsync"
 `toggle-marker` clears the field when every target candidate already matches it; otherwise it sets the field. `set-marker` always sets it, and `clear-marker` always removes it.
 
 Actions apply to every selected item, or the hovered item when there is no selection. Directories are scanned recursively; candidate exclusions and symlinks are respected. A successful action refreshes only the affected marker in the active directory, preserving collection status and its cache.
-
-## Diagnostics
-
-Start Yazi with `YAZI_LOG=debug yazi`, run the action, then inspect `~/.local/state/yazi/yazi.log` (or `$XDG_STATE_HOME/yazi/yazi.log`). Lines prefixed `[DEBUG-toggle-7d21]` record the received action, exact beets commands, candidate count, and result. Redact library paths before sharing a log.

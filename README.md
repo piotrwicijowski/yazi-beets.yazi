@@ -1,6 +1,6 @@
 # yazi-beets
 
-A [Yazi](https://yazi-rs.github.io/) plugin that shows whether paths have **collection membership** in a local [beets](https://beets.io/) library. A beets item is authoritative: a file extension or location beneath a music root does not prove membership.
+A [Yazi](https://yazi-rs.github.io/) plugin that shows whether paths have been imported into the local [beets](https://beets.io/) library. Helpful during transition period of having an existing music collection directory and doing successive collection import in place.
 
 ## Requirements
 
@@ -15,7 +15,7 @@ Install the package from GitHub:
 ya pkg add piotrwicijowski/yazi-beets
 ```
 
-The package is published at [piotrwicijowski/yazi-beets.yazi](https://github.com/piotrwicijowski/yazi-beets.yazi). For a manual installation, copy this repository into `~/.config/yazi/plugins/yazi-beets.yazi/`.
+For a manual installation, clone this repository into `~/.config/yazi/plugins/yazi-beets.yazi/`.
 
 ## Quick start
 
@@ -24,19 +24,7 @@ Add the plugin and its linemode to `~/.config/yazi/init.lua`:
 ```lua
 local beets = require("yazi-beets")
 
-beets:setup({
-  -- By default, beets' effective configuration is used.
-  -- library = "/absolute/path/to/library.db",
-  -- directory = "/absolute/path/to/music-root",
-
-  -- cache = true,
-  -- ignore_extensions = { "jpg", "png" },
-  -- ignore_subdirectories = { "Artwork", "Downloads" },
-
-  -- tag_markers = {
-  --   { label = "S", field = "onsync" },
-  -- },
-})
+beets:setup({})
 
 function Linemode:beets()
   return beets:linemode(self._file)

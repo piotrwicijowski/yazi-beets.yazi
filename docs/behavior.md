@@ -1,6 +1,6 @@
 # Collection-status behavior
 
-A **candidate file** is a non-directory, non-symlink filesystem entry that is not removed by an exclusion. A directory aggregates all of its recursive candidate descendants.
+A **candidate file** is a non-directory, non-symlink filesystem entry that is not excluded. A directory aggregates all of its recursive candidate descendants.
 
 | Status | Meaning |
 | --- | --- |
@@ -15,7 +15,7 @@ A **candidate file** is a non-directory, non-symlink filesystem entry that is no
 
 The plugin starts a fresh lookup when Yazi emits an active-directory change. Bind `plugin yazi-beets` to refresh explicitly or to start the initial lookup before an active-directory event occurs.
 
-Direct candidate files are published first after a lookup resolves. The plugin then scans direct subdirectory trees one at a time and coalesces status updates at most once every 50 ms. Unfinished paths, including the active directory, remain pending. This keeps large music directories responsive without presenting incomplete work as uncollected.
+Direct candidate files are published first after a lookup resolves. The plugin then scans direct subdirectory trees one at a time and coalesces status updates. Unfinished paths, including the active directory, remain pending. This keeps large music directories responsive without presenting incomplete work as uncollected.
 
 The default behavior does not poll or keep a session-wide cache. See [Configuration](configuration.md) for the optional lookup cache.
 
