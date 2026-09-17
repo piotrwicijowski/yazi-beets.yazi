@@ -1,5 +1,5 @@
 local root = (... and (...):match("^(.*)/[^/]+$")) or "."
-package.path = root .. "/yazi-beets.yazi/?.lua;" .. package.path
+package.path = root .. "/?.lua;" .. package.path
 
 local plugin_state = {}
 local commands = {}

@@ -5,4 +5,4 @@ test:
 	lua tests/adapter_spec.lua
 
 check: test
-	luac -p yazi-beets.yazi/core.lua yazi-beets.yazi/main.lua tests/core_spec.lua tests/adapter_spec.lua
+	luac -p core.lua main.lua tests/core_spec.lua tests/adapter_spec.lua

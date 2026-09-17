@@ -1,4 +1,12 @@
-# Manual fixture-library verification
+# Testing
+
+Run the deterministic unit, adapter, and Lua syntax checks:
+
+```sh
+make check
+```
+
+## Manual fixture-library verification
 
 Run this checklist in a supported Yazi installation after creating a beets fixture library with paths beneath the active directory.
 

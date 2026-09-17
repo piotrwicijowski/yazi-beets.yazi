@@ -1,4 +1,4 @@
---- @since 25.2.13
+--- @since 25.5.28
 local Core = require(".core")
 
 local M = {}
