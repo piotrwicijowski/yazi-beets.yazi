@@ -11,6 +11,14 @@ beets:setup({
   -- cache = true,
   -- ignore_extensions = { "jpg", "png" },
   -- ignore_subdirectories = { "Artwork", "Downloads" },
+  -- collection_status_symbols = {
+  --   collected = "●",
+  --   mixed = "◐",
+  --   uncollected = "○",
+  --   pending = "…",
+  --   unavailable = "!",
+  --   not_applicable = "—",
+  -- },
   -- tag_markers = {
   --   { label = "S", field = "onsync" },
   -- },
@@ -46,3 +54,7 @@ Without explicit paths, `cache = true` leaves the usual fresh-lookup behavior in
 Excluded paths display `—` and do not affect ancestor counts or collection status. A tree with no remaining candidate files is ready with not-applicable status and does not invoke beets.
 
 For `tag_markers`, see [Tag markers and actions](tag-markers.md).
+
+## Collection-status symbols
+
+`collection_status_symbols` optionally overrides the linemode symbol for one or more collection statuses. Omitted statuses retain their defaults. Its supported keys are `collected`, `mixed`, `uncollected`, `pending`, `unavailable`, and `not_applicable`; each value must be a nonempty string. Tag-marker symbols are configured independently and are unchanged by this option.

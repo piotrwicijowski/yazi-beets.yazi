@@ -244,6 +244,23 @@ assert(
 	"a functional refresh preserves configured exclusions"
 )
 
+outputs = { { status = { success = true }, stdout = "/music/album/song.flac\n" } }
+Plugin:setup({
+	collection_status_symbols = {
+		collected = "C",
+		mixed = "M",
+		uncollected = "U",
+		unavailable = "X",
+		pending = "P",
+		not_applicable = "N",
+	},
+})
+_G.cx = { active = { current = { cwd = "/music" } } }
+Plugin:entry()
+assert(Plugin:linemode(file("/music/album/song.flac")) == "C")
+assert(Plugin:linemode(file("/music/loose.mp3")) == "U")
+assert(Plugin:linemode(file("/music")) == "M")
+
 outputs = {
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },
 	{ status = { success = true }, stdout = "/music/album/song.flac\n" },

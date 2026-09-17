@@ -195,7 +195,7 @@ function Core.validate_exclusions(options)
 	}
 end
 
-local MARKERS = {
+local DEFAULT_COLLECTION_STATUS_SYMBOLS = {
 	collected = "●",
 	mixed = "◐",
 	uncollected = "○",
@@ -203,6 +203,43 @@ local MARKERS = {
 	["pending collection status"] = "…",
 	["not applicable"] = "—",
 }
+
+local COLLECTION_STATUS_SYMBOL_KEYS = {
+	collected = "collected",
+	mixed = "mixed",
+	uncollected = "uncollected",
+	unavailable = "unavailable",
+	pending = "pending collection status",
+	not_applicable = "not applicable",
+}
+
+function Core.validate_collection_status_symbols(options)
+	if type(options) ~= "table" then
+		return nil, "setup options must be a table"
+	end
+	local configured = options.collection_status_symbols
+	local symbols = {}
+	for status, symbol in pairs(DEFAULT_COLLECTION_STATUS_SYMBOLS) do
+		symbols[status] = symbol
+	end
+	if configured == nil then
+		return symbols
+	end
+	if type(configured) ~= "table" then
+		return nil, "collection_status_symbols must be a table"
+	end
+	for name, symbol in pairs(configured) do
+		local status = COLLECTION_STATUS_SYMBOL_KEYS[name]
+		if not status then
+			return nil, string.format("collection_status_symbols.%s is not a supported status", tostring(name))
+		end
+		if type(symbol) ~= "string" or symbol == "" then
+			return nil, string.format("collection_status_symbols.%s must be a nonempty string", name)
+		end
+		symbols[status] = symbol
+	end
+	return symbols
+end
 
 local EXPLANATIONS = {
 	collected = "This path corresponds to a beets item.",
@@ -222,8 +259,8 @@ local TITLES = {
 	["not applicable"] = "Not applicable",
 }
 
-function Core.marker(status)
-	return MARKERS[status] or ""
+function Core.marker(status, symbols)
+	return (symbols or DEFAULT_COLLECTION_STATUS_SYMBOLS)[status] or ""
 end
 
 local TAG_MARKERS = {

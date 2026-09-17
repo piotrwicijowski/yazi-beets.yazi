@@ -3,6 +3,7 @@ local Core = require(".core")
 
 local M = {}
 local options = {}
+local collection_status_symbols
 local lookup_cache
 local STATUS_PUBLISH_INTERVAL = 0.05
 local TAG_PUBLISH_INTERVAL = 0.05
@@ -239,6 +240,13 @@ function M:reload(directory, force_refresh)
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. cache_error))
 		return
 	end
+	local symbols, symbol_error = Core.validate_collection_status_symbols(options)
+	if not symbols then
+		collection_status_symbols = nil
+		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. symbol_error))
+		return
+	end
+	collection_status_symbols = symbols
 	local exclusions, exclusion_error = Core.validate_exclusions(options)
 	if not exclusions then
 		finish_snapshot(generation, failure_snapshot(directory, "invalid configuration: " .. exclusion_error))
@@ -762,6 +770,7 @@ end
 
 function M:setup(user_options)
 	options = user_options or {}
+	collection_status_symbols = nil
 	store_options(options)
 	lookup_cache = nil
 	store_cache(nil)
@@ -782,7 +791,7 @@ function M:linemode(file)
 	if file.cha and file.cha.is_symlink and (not status or status.status ~= "not applicable") then
 		return ""
 	end
-	local markers = { Core.marker(status and status.status) }
+	local markers = { Core.marker(status and status.status, collection_status_symbols) }
 	for _, marker_snapshot in ipairs((snapshot and snapshot.tag_markers) or {}) do
 		local marker_status = Core.tag_marker_status_for(marker_snapshot, tostring(file.url))
 		markers[#markers + 1] = marker_snapshot.marker.label .. Core.tag_marker_glyph(marker_status and marker_status.status)

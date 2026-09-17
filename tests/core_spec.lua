@@ -112,6 +112,34 @@ test("validates the optional lookup-cache flag", function()
 	assert(err:find("cache must be a boolean"))
 end)
 
+test("validates collection-status symbol overrides while retaining defaults", function()
+	local defaults = assert(Core.validate_collection_status_symbols({}))
+	assert(Core.marker("collected", defaults) == "●")
+	assert(Core.marker("pending collection status", defaults) == "…")
+
+	local symbols = assert(Core.validate_collection_status_symbols({
+		collection_status_symbols = {
+			collected = "C",
+			pending = "?",
+			not_applicable = "-",
+		},
+	}))
+	assert(Core.marker("collected", symbols) == "C")
+	assert(Core.marker("mixed", symbols) == "◐")
+	assert(Core.marker("pending collection status", symbols) == "?")
+	assert(Core.marker("not applicable", symbols) == "-")
+
+	for _, case in ipairs({
+		{ options = { collection_status_symbols = "C" }, expected = "must be a table" },
+		{ options = { collection_status_symbols = { unknown = "?" } }, expected = "not a supported status" },
+		{ options = { collection_status_symbols = { collected = "" } }, expected = "must be a nonempty string" },
+	}) do
+		local result, err = Core.validate_collection_status_symbols(case.options)
+		assert(result == nil)
+		assert(err:find(case.expected), err)
+	end
+end)
+
 test("validates and normalizes flat exclusion lists", function()
 	local exclusions = assert(Core.validate_exclusions({
 		ignore_extensions = { "jpg", "GZ", "jpg" },
